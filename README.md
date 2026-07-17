@@ -88,6 +88,20 @@ npm run test:e2e
 npm run build
 ```
 
+### Supabase 로컬 명령어
+
+```bash
+npm run supabase:start
+npm run supabase:status
+npm run supabase:stop
+```
+
+```bash
+npm run supabase:typegen
+```
+
+> 로컬 Supabase 스택 실행에는 `Docker Desktop`이 필요합니다.
+
 ## 환경 변수
 
 실제 값은 `.env.local` 또는 Vercel / Supabase 환경 변수에 넣고, 예시는 `.env.example`을 참고합니다.
