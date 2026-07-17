@@ -4,7 +4,7 @@ test("로컬 Katamino 기본 배치 흐름이 동작한다", async ({ page }) =>
   await page.goto("/");
 
   await expect(
-    page.getByRole("heading", { level: 1, name: "Katamino 웹 재구현" }),
+    page.getByRole("heading", { level: 1, name: "Katamino 온라인" }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: /블록 12/ }).click();

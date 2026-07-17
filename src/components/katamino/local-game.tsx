@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { canPlacePiece } from "@/domain/katamino/board";
 import {
+  clearSelectedPiece,
   createInitialGameState,
   placeSelectedPiece,
   resetGameSession,
@@ -118,6 +119,23 @@ export function LocalGame() {
     };
   }, [selectedPiece]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      setGameState((current) => clearSelectedPiece(current));
+      setHoveredBoardCell(null);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <article
@@ -128,7 +146,7 @@ export function LocalGame() {
           <div>
             <h2 className="text-xl font-semibold">로컬 플레이 보드</h2>
             <p className="text-sm text-black/60">
-              블록을 집은 뒤 보드 위에서 위치를 미리 보고, 클릭으로 확정할 수 있다. 선택 상태에서는 마우스 휠로도 회전할 수 있다.
+              블록을 집은 뒤 보드 위에서 위치를 먼저 확인하고 놓을 수 있습니다. 선택 상태에서는 마우스 휠로 회전하고, 다시 누르거나 Esc로 선택을 해제할 수 있습니다.
             </p>
           </div>
 
@@ -219,7 +237,13 @@ export function LocalGame() {
                   key={piece.id}
                   type="button"
                   disabled={isUsed}
-                  onClick={() => setGameState((current) => selectPiece(current, piece.id))}
+                    onClick={() => {
+                      setGameState((current) =>
+                        current.selectedPieceId === piece.id
+                          ? clearSelectedPiece(current)
+                          : selectPiece(current, piece.id),
+                      );
+                    }}
                   className={`rounded-2xl border px-3 py-3 text-left text-sm transition ${
                     isUsed
                       ? "cursor-not-allowed border-[var(--line)] bg-black/5 text-black/35"
