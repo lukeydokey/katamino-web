@@ -30,3 +30,7 @@ export interface PieceDefinition {
 
 export type BoardCell = PieceId | null;
 export type BoardState = BoardCell[][];
+
+export type PlayerSeat = "host" | "guest";
+export type GamePhase = "playing" | "finished";
+export type FinishedReason = "forfeit" | "completed" | "timeout";
