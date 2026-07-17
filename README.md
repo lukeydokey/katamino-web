@@ -12,7 +12,12 @@
 - 방 생성 / 참가 / 시작이 가능한 room entry 및 lobby UI 추가 완료
 - hosted Supabase 프로젝트 및 Vercel 프로젝트 연결 완료
 - `Vitest` 단위 테스트 + `Playwright` smoke test 구성 완료
-- Realtime 동기화와 최종 production 배포만 남은 상태
+- production 배포 완료
+
+## 접속 링크
+
+- Production: `https://katamino-web.vercel.app`
+- Preview: `https://katamino-e5j6p883i-lukeydokeys-projects.vercel.app`
 
 ## 기술 스택
 
@@ -129,22 +134,22 @@ npm run supabase:typegen
 
 ## 앞으로 남은 큰 작업
 
-1. 로컬 상태를 멀티플레이 가능한 직렬화 가능한 세션 모델로 확장
-2. Supabase 프로젝트 초기화 및 스키마 작성
-3. 방 생성 / 참가 / 시작 흐름 추가
-4. Realtime 멀티플레이 동기화 구현
-5. 배포 문서 확정 및 Vercel production 배포
+1. Realtime 멀티플레이 동기화 구현
+2. 실제 룸 참여자 목록 / 준비 상태 UI 구현
+3. 게임 시작 후 공용 보드 동기화 구현
+4. 일반 사용자 플레이 기준의 UX/게임 기획 개선안 정리
 
-## 배포 전 체크리스트
+## 배포 체크리스트
 
-- [ ] `README.md` 최신 상태 유지
-- [ ] `.env.example` 최신 상태 유지
-- [ ] `npm run lint` 통과
-- [ ] `npm run test` 통과
-- [ ] `npm run test:e2e` 통과
-- [ ] `npm run build` 통과
-- [ ] Supabase 환경 변수 설정 완료
-- [ ] Vercel 프로젝트 연결 완료
+- [x] `README.md` 최신 상태 유지
+- [x] `.env.example` 최신 상태 유지
+- [x] `npm run lint` 통과
+- [x] `npm run test` 통과
+- [x] `npm run test:e2e` 통과
+- [x] `npm run build` 통과
+- [x] Supabase 환경 변수 설정 완료
+- [x] Vercel 프로젝트 연결 완료
+- [x] Production 배포 완료
 
 ## 레거시 참고
 
