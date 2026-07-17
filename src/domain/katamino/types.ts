@@ -34,3 +34,4 @@ export type BoardState = BoardCell[][];
 export type PlayerSeat = "host" | "guest";
 export type GamePhase = "playing" | "finished";
 export type FinishedReason = "forfeit" | "completed" | "timeout";
+export type RoomStatus = "waiting" | "playing" | "finished";
