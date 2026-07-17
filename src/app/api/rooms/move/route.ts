@@ -66,6 +66,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "해당 코드를 가진 방이 없습니다." }, { status: 404 });
   }
 
+  if (room.status !== "playing") {
+    return NextResponse.json({ message: "아직 진행 중인 게임이 아닙니다." }, { status: 409 });
+  }
+
   const { data: players } = await supabase
     .from("room_players")
     .select("guest_id, seat")
@@ -87,6 +91,10 @@ export async function POST(request: Request) {
 
   if (!roomGame || !gameState) {
     return NextResponse.json({ message: "게임 상태를 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  if (gameState.phase !== "playing") {
+    return NextResponse.json({ message: "이미 종료된 게임입니다." }, { status: 409 });
   }
 
   if (gameState.currentTurnSeat !== requester.seat) {
@@ -128,13 +136,20 @@ export async function POST(request: Request) {
     },
   };
 
-  const { error } = await supabase
+  const { data: updatedGame, error } = await supabase
     .from("room_games")
     .update({ state_json: nextState, version: roomGame.version + 1 })
-    .eq("room_id", room.id);
+    .eq("room_id", room.id)
+    .eq("version", roomGame.version)
+    .select("version")
+    .maybeSingle();
 
   if (error) {
     return NextResponse.json({ message: "게임 상태 저장에 실패했습니다." }, { status: 500 });
+  }
+
+  if (!updatedGame) {
+    return NextResponse.json({ message: "다른 플레이어의 변경이 먼저 반영되었습니다. 다시 시도해 주세요." }, { status: 409 });
   }
 
   return NextResponse.json({ ok: true, state: nextState });

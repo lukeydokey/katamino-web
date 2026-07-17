@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { canPlacePiece } from "@/domain/katamino/board";
 import { rotateMaskClockwise } from "@/domain/katamino/pieces";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -32,6 +32,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
   const [selectedPieceId, setSelectedPieceId] = useState<PieceId | null>(null);
   const [rotation, setRotation] = useState(0);
   const [hoveredBoardCell, setHoveredBoardCell] = useState<{ x: number; y: number } | null>(null);
+  const selectedPieceIdRef = useRef<PieceId | null>(null);
 
   const normalizedSeat = seat === "host" || seat === "guest" ? seat : undefined;
   const playerCount = roomSummary?.players.length ?? 0;
@@ -77,6 +78,10 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
   const canPlayTurn = gameState && normalizedSeat === gameState.currentTurnSeat;
 
   useEffect(() => {
+    selectedPieceIdRef.current = selectedPieceId;
+  }, [selectedPieceId]);
+
+  useEffect(() => {
     let active = true;
     const client = getSupabaseBrowserClient();
 
@@ -93,8 +98,11 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
       const payload = (await response.json()) as RoomSummary;
       setRoomSummary(payload);
 
-      if (!payload.gameState?.pieces[selectedPieceId as keyof typeof payload.gameState.pieces]) {
+      const currentSelectedPieceId = selectedPieceIdRef.current;
+
+      if (currentSelectedPieceId && payload.gameState?.usedPieceIds.includes(currentSelectedPieceId)) {
         setSelectedPieceId(null);
+        setRotation(0);
       }
     }
 
@@ -134,7 +142,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
       window.clearInterval(intervalId);
       channel?.unsubscribe();
     };
-  }, [normalizedSeat, roomCode, selectedPieceId]);
+  }, [normalizedSeat, roomCode]);
 
   async function startRoom() {
     setIsStarting(true);
