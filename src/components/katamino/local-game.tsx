@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { canPlacePiece } from "@/domain/katamino/board";
 import {
   createInitialGameState,
@@ -70,6 +70,7 @@ function PieceShape({
 export function LocalGame() {
   const [gameState, setGameState] = useState(createInitialGameState);
   const [hoveredBoardCell, setHoveredBoardCell] = useState<{ x: number; y: number } | null>(null);
+  const boardArticleRef = useRef<HTMLElement | null>(null);
 
   const pieceList = useMemo(() => Object.values(gameState.pieces), [gameState.pieces]);
   const selectedPiece = gameState.selectedPieceId
@@ -94,18 +95,34 @@ export function LocalGame() {
     setHoveredBoardCell(null);
   }
 
+  useEffect(() => {
+    const articleElement = boardArticleRef.current;
+
+    if (!articleElement) {
+      return;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      if (!selectedPiece) {
+        return;
+      }
+
+      event.preventDefault();
+      handleRotate();
+    };
+
+    articleElement.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      articleElement.removeEventListener("wheel", handleWheel);
+    };
+  }, [selectedPiece]);
+
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <article
+        ref={boardArticleRef}
         className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm"
-        onWheel={(event) => {
-          if (!selectedPiece) {
-            return;
-          }
-
-          event.preventDefault();
-          handleRotate();
-        }}
       >
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
