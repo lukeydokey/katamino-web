@@ -11,6 +11,9 @@ build/
 .next/
 out/
 coverage/
+playwright-report/
+test-results/
+.playwright-mcp/
 
 .env
 .env.*
