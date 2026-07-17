@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { canPlacePiece } from "@/domain/katamino/board";
+import { getPieceColor } from "@/domain/katamino/pieces";
 import {
   clearSelectedPiece,
   createInitialGameState,
@@ -187,8 +188,8 @@ export function LocalGame() {
                     setGameState((current) => placeSelectedPiece(current, x, y).state)
                   }
                   className={`flex items-center justify-center rounded-lg border text-xs font-medium transition ${
-                    isFilled
-                      ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
+                    isFilled && cell
+                      ? `${getPieceColor(cell).border} ${getPieceColor(cell).soft} ${getPieceColor(cell).text}`
                       : isPreviewCell
                         ? canPlaceAtHoveredCell
                           ? "border-emerald-500 bg-emerald-100 text-emerald-800"
@@ -197,7 +198,7 @@ export function LocalGame() {
                   }`}
                   aria-label={`${x},${y} 칸`}
                 >
-                  {cell ? cell.slice(-2) : ""}
+                  {cell ? "" : ""}
                 </button>
               );
             }),
@@ -259,7 +260,7 @@ export function LocalGame() {
 
                   <PieceShape
                     mask={piece.currentMask}
-                    filledClassName={isSelected ? "bg-white/90" : "bg-[var(--accent)]"}
+                    filledClassName={isSelected ? "bg-white/90" : getPieceColor(piece.id).fill}
                     emptyClassName={isSelected ? "bg-white/20" : "bg-[var(--surface)]"}
                     cellClassName="h-3 w-3 rounded-[4px] border border-[var(--line)]"
                   />
