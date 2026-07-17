@@ -9,8 +9,10 @@
 - `Next.js` App Router 기반 프론트엔드 스캐폴드 완료
 - Katamino 블록 데이터/회전/배치 규칙을 TypeScript 도메인으로 분리 완료
 - 단일 브라우저에서 블록 선택/회전/배치가 가능한 로컬 플레이 UI 구현 완료
+- 방 생성 / 참가 / 시작이 가능한 room entry 및 lobby UI 추가 완료
+- hosted Supabase 프로젝트 및 Vercel 프로젝트 연결 완료
 - `Vitest` 단위 테스트 + `Playwright` smoke test 구성 완료
-- Supabase 연동, 룸 생성/참가, Realtime 멀티플레이, 배포는 아직 진행 중
+- Realtime 동기화와 최종 production 배포만 남은 상태
 
 ## 기술 스택
 
@@ -28,7 +30,7 @@
 ### 목표 백엔드/배포
 - `Supabase Postgres`
 - `Supabase Realtime`
-- `Supabase Auth (anonymous/guest 중심)`
+- server-issued guest session cookie + `Supabase` 저장 구조
 - `Vercel`
 
 ## 디렉터리 개요
@@ -122,17 +124,16 @@ npm run supabase:typegen
 ### 의도
 - 게임 규칙은 프레임워크와 분리된 순수 TypeScript로 유지
 - 멀티플레이는 레거시 TCP loopback을 포팅하지 않고, Supabase Realtime 기반 룸 동기화로 재설계
-- 초기에는 guest/anonymous 기반 식별만 사용
+- 초기에는 회원가입 없이도 바로 플레이 가능한 guest 식별 방식을 사용
 - 과도한 매치메이킹, 랭킹, 관전, 리플레이는 뒤로 미룸
 
 ## 앞으로 남은 큰 작업
 
 1. 로컬 상태를 멀티플레이 가능한 직렬화 가능한 세션 모델로 확장
 2. Supabase 프로젝트 초기화 및 스키마 작성
-3. guest/anonymous 세션 연결
-4. 방 생성 / 참가 / 시작 흐름 추가
-5. Realtime 멀티플레이 동기화 구현
-6. 배포 문서 확정 및 Vercel 배포
+3. 방 생성 / 참가 / 시작 흐름 추가
+4. Realtime 멀티플레이 동기화 구현
+5. 배포 문서 확정 및 Vercel production 배포
 
 ## 배포 전 체크리스트
 
