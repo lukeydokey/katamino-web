@@ -6,7 +6,12 @@
 - Supabase hosted 프로젝트 생성 완료: `jdhnbjbzljuxylxluork`
 - remote DB migration 반영 완료
 - preview 배포 성공 확인 완료
-- production 배포는 다음 단계에서 진행
+- production 배포 성공 확인 완료
+
+## 접속 링크
+
+- Production: `https://katamino-web.vercel.app`
+- Preview: `https://katamino-e5j6p883i-lukeydokeys-projects.vercel.app`
 
 ## 비고
 
