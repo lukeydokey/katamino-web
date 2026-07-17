@@ -42,6 +42,11 @@ export async function GET(_: Request, context: RoomRouteContext) {
       seat: player.seat,
     })) ?? [];
 
+  const { count: spectatorCount } = await supabase
+    .from("room_spectators")
+    .select("*", { count: "exact", head: true })
+    .eq("room_id", room.id);
+
   const { data: roomGame } = await supabase
     .from("room_games")
     .select("state_json, version, deadline_at")
@@ -79,6 +84,7 @@ export async function GET(_: Request, context: RoomRouteContext) {
     gameState,
     room.turn_time_seconds,
     deadlineAt,
+    spectatorCount ?? 0,
   );
 
   return NextResponse.json(summary);

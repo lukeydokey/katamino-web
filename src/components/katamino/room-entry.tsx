@@ -104,6 +104,28 @@ export function RoomEntry() {
     }
   }
 
+  async function spectateRoom() {
+    setIsSubmitting(true);
+    setMessage(null);
+
+    try {
+      const roomCode = joinCode.trim().toUpperCase();
+      const response = await fetch(`/api/rooms/${roomCode}/spectate`, {
+        method: "POST",
+      });
+      const payload = (await response.json()) as { message?: string; roomCode?: string };
+
+      if (!response.ok || !payload.roomCode) {
+        setMessage(payload.message ?? "관전 참가에 실패했습니다.");
+        return;
+      }
+
+      router.push(`/room/${payload.roomCode}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm">
       <div className="flex flex-col gap-3">
@@ -141,6 +163,15 @@ export function RoomEntry() {
             방 참가하기
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={() => void spectateRoom()}
+          disabled={sessionStatus !== "ready" || isSubmitting || joinCode.trim().length < 4}
+          className="rounded-2xl border border-[var(--line)] bg-white px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          관전으로 입장하기
+        </button>
 
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium text-black/70" htmlFor="turn-time-seconds">
