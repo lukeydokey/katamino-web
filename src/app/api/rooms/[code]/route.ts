@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { summarizeRoomState, type RoomPlayerRecord } from "@/lib/rooms/service";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import type { LocalGameSession } from "@/domain/katamino/game-state";
 
 interface RoomRouteContext {
   params: Promise<Record<string, string>>;
@@ -40,7 +41,15 @@ export async function GET(_: Request, context: RoomRouteContext) {
       seat: player.seat,
     })) ?? [];
 
-  const summary = summarizeRoomState(room.code, room.status, normalizedPlayers);
+  const { data: roomGame } = await supabase
+    .from("room_games")
+    .select("state_json")
+    .eq("room_id", room.id)
+    .maybeSingle();
+
+  const gameState = (roomGame?.state_json as LocalGameSession | null | undefined) ?? null;
+
+  const summary = summarizeRoomState(room.code, room.status, normalizedPlayers, gameState);
 
   return NextResponse.json(summary);
 }
