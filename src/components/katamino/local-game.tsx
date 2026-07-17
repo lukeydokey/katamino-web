@@ -102,16 +102,17 @@ export function LocalGame() {
           <h3 className="text-lg font-semibold">블록 트레이</h3>
           <div className="grid grid-cols-2 gap-2">
             {pieceList.map((piece) => {
+              const isUsed = gameState.usedPieceIds.has(piece.id);
               const isSelected = gameState.selectedPieceId === piece.id;
 
               return (
                 <button
                   key={piece.id}
                   type="button"
-                  disabled={piece.used}
+                  disabled={isUsed}
                   onClick={() => setGameState((current) => selectPiece(current, piece.id))}
                   className={`rounded-2xl border px-3 py-3 text-left text-sm transition ${
-                    piece.used
+                    isUsed
                       ? "cursor-not-allowed border-[var(--line)] bg-black/5 text-black/35"
                       : isSelected
                         ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-foreground)]"
@@ -120,7 +121,7 @@ export function LocalGame() {
                 >
                   <div className="font-semibold">{formatPieceLabel(piece.id)}</div>
                   <div className="text-xs opacity-80">
-                    {piece.used ? "사용 완료" : `회전 ${piece.rotation * 90}°`}
+                    {isUsed ? "사용 완료" : `회전 ${piece.rotation * 90}°`}
                   </div>
                 </button>
               );

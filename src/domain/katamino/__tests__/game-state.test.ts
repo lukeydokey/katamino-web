@@ -53,4 +53,14 @@ describe("katamino local game state", () => {
 
     expect(reselectedState.selectedPieceId).toBe(null);
   });
+
+  it("다른 블록을 선택하면 이전 미배치 블록의 회전 상태가 초기화된다", () => {
+    const selectedState = selectPiece(createInitialGameState(), "block03");
+    const rotatedState = rotateSelectedPiece(selectedState);
+    const switchedState = selectPiece(rotatedState, "block05");
+
+    expect(switchedState.selectedPieceId).toBe("block05");
+    expect(switchedState.pieces.block03.rotation).toBe(0);
+    expect(switchedState.pieces.block03.currentMask).toEqual(switchedState.pieces.block03.initialMask);
+  });
 });
