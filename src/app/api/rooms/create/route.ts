@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
+import { ensureGuestSessionId } from "@/lib/guest-session";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { generateRoomCode } from "@/lib/rooms/service";
-import { getCurrentGuestId } from "@/lib/supabase/auth";
 
 export async function POST() {
   const supabase = getSupabaseAdminClient();
@@ -13,11 +13,7 @@ export async function POST() {
     );
   }
 
-  const currentGuest = await getCurrentGuestId();
-
-  if (!currentGuest.ok) {
-    return NextResponse.json({ message: "인증된 guest 세션이 필요합니다." }, { status: 401 });
-  }
+  const guestId = await ensureGuestSessionId();
 
   const code = generateRoomCode();
   const { data: room, error: roomError } = await supabase
@@ -32,7 +28,7 @@ export async function POST() {
 
   const { error: playerError } = await supabase.from("room_players").insert({
     room_id: room.id,
-    guest_id: currentGuest.guestId,
+    guest_id: guestId,
     seat: "host",
   });
 

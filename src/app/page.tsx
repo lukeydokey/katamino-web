@@ -1,4 +1,5 @@
 import { LocalGame } from "@/components/katamino/local-game";
+import { RoomEntry } from "@/components/katamino/room-entry";
 
 export default function Home() {
   return (
@@ -15,6 +16,8 @@ export default function Home() {
           </p>
         </div>
       </section>
+
+      <RoomEntry />
 
       <LocalGame />
     </main>
