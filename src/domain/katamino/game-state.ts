@@ -2,15 +2,15 @@ import { canPlacePiece, createBoard, placePiece } from "@/domain/katamino/board"
 import { createPieceMap, rotateMaskClockwise } from "@/domain/katamino/pieces";
 import type {
   BoardState,
-  PieceDefinition,
   PieceId,
   PieceMask,
 } from "@/domain/katamino/types";
 
-export interface LocalPieceState extends PieceDefinition {
+export interface LocalPieceState {
+  id: PieceId;
+  initialMask: PieceMask;
   currentMask: PieceMask;
   rotation: number;
-  used: boolean;
 }
 
 export interface LocalGameState {
@@ -33,10 +33,10 @@ function buildLocalPieces(): Record<PieceId, LocalPieceState> {
   return Object.values(pieceMap).reduce<Record<PieceId, LocalPieceState>>(
     (accumulator, piece) => {
       accumulator[piece.id] = {
-        ...piece,
+        id: piece.id,
+        initialMask: piece.mask.map((row) => [...row]),
         currentMask: piece.mask.map((row) => [...row]),
         rotation: 0,
-        used: false,
       };
 
       return accumulator;
@@ -64,8 +64,20 @@ export function selectPiece(state: LocalGameState, pieceId: PieceId): LocalGameS
     };
   }
 
+  const nextPieces = { ...state.pieces };
+
+  if (state.selectedPieceId !== null && state.selectedPieceId !== pieceId) {
+    const previousPiece = state.pieces[state.selectedPieceId];
+    nextPieces[state.selectedPieceId] = {
+      ...previousPiece,
+      currentMask: previousPiece.initialMask.map((row) => [...row]),
+      rotation: 0,
+    };
+  }
+
   return {
     ...state,
+    pieces: nextPieces,
     selectedPieceId: pieceId,
     message: `${pieceId} 선택됨`,
   };
@@ -134,13 +146,7 @@ export function placeSelectedPiece(
 
   const nextState: LocalGameState = {
     board: nextBoard,
-    pieces: {
-      ...state.pieces,
-      [selectedPiece.id]: {
-        ...selectedPiece,
-        used: true,
-      },
-    },
+    pieces: state.pieces,
     selectedPieceId: null,
     usedPieceIds: nextUsedPieceIds,
     message: `${selectedPiece.id} 배치 완료`,
