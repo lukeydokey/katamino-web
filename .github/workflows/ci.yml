@@ -30,6 +30,9 @@ jobs:
       - name: lint 실행
         run: npm run lint
 
+      - name: typecheck 실행
+        run: npm run typecheck
+
       - name: unit test 실행
         run: npm run test
 
