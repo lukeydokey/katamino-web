@@ -11,7 +11,7 @@ describe("supabase env helpers", () => {
       readPublicSupabaseEnv({
         NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
         NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon-key",
-      } as NodeJS.ProcessEnv),
+      }),
     ).toEqual({
       url: "https://example.supabase.co",
       anonKey: "anon-key",
@@ -19,7 +19,7 @@ describe("supabase env helpers", () => {
   });
 
   it("public env가 빠지면 null을 반환한다", () => {
-    expect(readPublicSupabaseEnv({} as NodeJS.ProcessEnv)).toBeNull();
+    expect(readPublicSupabaseEnv({})).toBeNull();
   });
 
   it("server env는 service role key를 함께 읽는다", () => {
@@ -28,7 +28,7 @@ describe("supabase env helpers", () => {
         NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
         NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon-key",
         SUPABASE_SERVICE_ROLE_KEY: "service-role",
-      } as NodeJS.ProcessEnv),
+      }),
     ).toEqual({
       url: "https://example.supabase.co",
       anonKey: "anon-key",
@@ -37,12 +37,12 @@ describe("supabase env helpers", () => {
   });
 
   it("설정 존재 여부를 boolean으로 판단한다", () => {
-    expect(isSupabaseConfigured({} as NodeJS.ProcessEnv)).toBe(false);
+    expect(isSupabaseConfigured({})).toBe(false);
     expect(
       isSupabaseConfigured({
         NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
         NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon-key",
-      } as NodeJS.ProcessEnv),
+      }),
     ).toBe(true);
   });
 });
