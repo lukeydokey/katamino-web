@@ -69,14 +69,20 @@ export async function POST(request: Request) {
 
   const nextState = forfeitGame(gameState, requester.seat as PlayerSeat);
 
-  const { error: gameError } = await supabase
+  const { data: updatedGame, error: gameError } = await supabase
     .from("room_games")
     .update({ state_json: nextState, version: roomGame.version + 1 })
     .eq("room_id", room.id)
-    .eq("version", roomGame.version);
+    .eq("version", roomGame.version)
+    .select("version")
+    .maybeSingle();
 
   if (gameError) {
     return NextResponse.json({ message: "기권 처리에 실패했습니다." }, { status: 500 });
+  }
+
+  if (!updatedGame) {
+    return NextResponse.json({ message: "다른 플레이어의 변경이 먼저 반영되었습니다. 다시 시도해 주세요." }, { status: 409 });
   }
 
   const { error: roomError } = await supabase
