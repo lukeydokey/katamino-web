@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ensureGuestSessionId } from "@/lib/guest-session";
+import { getGuestSessionId } from "@/lib/guest-session";
 import {
   canStartRoom,
   createInitialRoomSnapshot,
@@ -18,7 +18,11 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as { code?: string };
-  const guestId = await ensureGuestSessionId();
+  const guestId = await getGuestSessionId();
+
+  if (!guestId) {
+    return NextResponse.json({ message: "인증된 guest 세션이 필요합니다." }, { status: 401 });
+  }
 
   if (!body.code) {
     return NextResponse.json({ message: "code가 필요합니다." }, { status: 400 });

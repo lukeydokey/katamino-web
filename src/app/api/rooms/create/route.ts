@@ -15,6 +15,10 @@ export async function POST() {
 
   const guestId = await ensureGuestSessionId();
 
+  if (!guestId) {
+    return NextResponse.json({ message: "인증된 guest 세션이 필요합니다." }, { status: 401 });
+  }
+
   const code = generateRoomCode();
   const { data: room, error: roomError } = await supabase
     .from("rooms")
