@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
+import { ensureGuestSessionId } from "@/lib/guest-session";
 import {
   canStartRoom,
   createInitialRoomSnapshot,
   type RoomPlayerRecord,
 } from "@/lib/rooms/service";
-import { getCurrentGuestId } from "@/lib/supabase/auth";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
@@ -18,11 +18,7 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as { code?: string };
-  const currentGuest = await getCurrentGuestId();
-
-  if (!currentGuest.ok) {
-    return NextResponse.json({ message: "인증된 guest 세션이 필요합니다." }, { status: 401 });
-  }
+  const guestId = await ensureGuestSessionId();
 
   if (!body.code) {
     return NextResponse.json({ message: "code가 필요합니다." }, { status: 400 });
@@ -49,7 +45,7 @@ export async function POST(request: Request) {
       seat: player.seat,
     })) ?? [];
 
-  const requester = normalizedPlayers.find((player) => player.guestId === currentGuest.guestId);
+  const requester = normalizedPlayers.find((player) => player.guestId === guestId);
 
   if (!requester) {
     return NextResponse.json({ message: "방 참가자만 게임을 시작할 수 있습니다." }, { status: 403 });
