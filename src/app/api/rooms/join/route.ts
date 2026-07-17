@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAvailableSeat, type RoomPlayerRecord } from "@/lib/rooms/service";
+import { getCurrentGuestId } from "@/lib/supabase/auth";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
@@ -12,10 +13,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const body = (await request.json()) as { guestId?: string; code?: string };
+  const body = (await request.json()) as { code?: string };
 
-  if (!body.guestId || !body.code) {
-    return NextResponse.json({ message: "guestId와 code가 필요합니다." }, { status: 400 });
+  const currentGuest = await getCurrentGuestId();
+
+  if (!currentGuest.ok) {
+    return NextResponse.json({ message: "인증된 guest 세션이 필요합니다." }, { status: 401 });
+  }
+
+  if (!body.code) {
+    return NextResponse.json({ message: "code가 필요합니다." }, { status: 400 });
   }
 
   const { data: room } = await supabase
@@ -39,7 +46,7 @@ export async function POST(request: Request) {
       seat: player.seat,
     })) ?? [];
 
-  const existingPlayer = normalizedPlayers.find((player) => player.guestId === body.guestId);
+  const existingPlayer = normalizedPlayers.find((player) => player.guestId === currentGuest.guestId);
 
   if (existingPlayer) {
     return NextResponse.json({ roomCode: room.code, seat: existingPlayer.seat });
@@ -53,7 +60,7 @@ export async function POST(request: Request) {
 
   const { error } = await supabase.from("room_players").insert({
     room_id: room.id,
-    guest_id: body.guestId,
+    guest_id: currentGuest.guestId,
     seat,
   });
 
