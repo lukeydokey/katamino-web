@@ -25,6 +25,54 @@ interface RoomPageClientProps {
   seat: string | undefined;
 }
 
+function PieceShape({
+  mask,
+  filledClassName,
+  emptyClassName,
+  cellClassName,
+}: {
+  mask: number[][];
+  filledClassName: string;
+  emptyClassName: string;
+  cellClassName: string;
+}) {
+  return (
+    <div className="grid grid-cols-5 gap-0.5">
+      {mask.flatMap((row, rowIndex) =>
+        row.map((cell, columnIndex) => (
+          <div
+            key={`${rowIndex}-${columnIndex}`}
+            className={`${cellClassName} ${cell === 1 ? filledClassName : emptyClassName}`}
+          />
+        )),
+      )}
+    </div>
+  );
+}
+
+function getPreviewCells(mask: number[][], x: number, y: number) {
+  const previewCells: Array<{ x: number; y: number }> = [];
+
+  for (let boardX = x - 2; boardX <= x + 2; boardX += 1) {
+    for (let boardY = y - 2; boardY <= y + 2; boardY += 1) {
+      const maskY = boardY - (y - 2);
+      const maskX = boardX - (x - 2);
+
+      if (mask[maskY]?.[maskX] !== 1) {
+        continue;
+      }
+
+      if (boardX < 0 || boardX > 7 || boardY < 0 || boardY > 7) {
+        continue;
+      }
+
+      previewCells.push({ x: boardX, y: boardY });
+    }
+  }
+
+  return previewCells;
+}
+
 export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
@@ -33,6 +81,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
   const [rotation, setRotation] = useState(0);
   const [hoveredBoardCell, setHoveredBoardCell] = useState<{ x: number; y: number } | null>(null);
   const selectedPieceIdRef = useRef<PieceId | null>(null);
+  const boardArticleRef = useRef<HTMLElement | null>(null);
 
   const normalizedSeat = seat === "host" || seat === "guest" ? seat : undefined;
   const playerCount = roomSummary?.players.length ?? 0;
@@ -58,6 +107,11 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
     gameState && previewMask && hoveredBoardCell
       ? canPlacePiece(gameState.board, previewMask, hoveredBoardCell.x, hoveredBoardCell.y)
       : false;
+  const previewCells =
+    previewMask && hoveredBoardCell
+      ? getPreviewCells(previewMask, hoveredBoardCell.x, hoveredBoardCell.y)
+      : [];
+  const previewCellMap = new Map(previewCells.map((cell) => [`${cell.x}-${cell.y}`, cell]));
 
   const roomStatusLabel = useMemo(() => {
     if (!roomSummary) {
@@ -80,6 +134,47 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
   useEffect(() => {
     selectedPieceIdRef.current = selectedPieceId;
   }, [selectedPieceId]);
+
+  useEffect(() => {
+    const articleElement = boardArticleRef.current;
+
+    if (!articleElement) {
+      return;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      if (!selectedPieceId || !canPlayTurn) {
+        return;
+      }
+
+      event.preventDefault();
+      setRotation((current) => (current + 1) % 4);
+    };
+
+    articleElement.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      articleElement.removeEventListener("wheel", handleWheel);
+    };
+  }, [canPlayTurn, selectedPieceId]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      setSelectedPieceId(null);
+      setRotation(0);
+      setHoveredBoardCell(null);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -281,7 +376,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
 
       {gameState ? (
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <article className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm">
+          <article ref={boardArticleRef} className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-semibold">공유 게임 보드</h2>
@@ -303,28 +398,30 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
             </div>
 
             <div className="grid aspect-square max-w-[640px] grid-cols-8 gap-2 rounded-2xl bg-[var(--surface-strong)] p-4">
-              {gameState.board.map((row, y) =>
-                row.map((cell, x) => {
-                  const isFilled = cell !== null;
+                {gameState.board.map((row, y) =>
+                  row.map((cell, x) => {
+                    const isFilled = cell !== null;
+                    const previewKey = `${x}-${y}`;
+                    const isPreviewCell = previewCellMap.has(previewKey);
 
-                  return (
-                    <button
-                      key={`${x}-${y}`}
-                      type="button"
+                    return (
+                      <button
+                        key={`${x}-${y}`}
+                        type="button"
                       onMouseEnter={() => setHoveredBoardCell({ x, y })}
                       onFocus={() => setHoveredBoardCell({ x, y })}
                       onMouseLeave={() => setHoveredBoardCell(null)}
                       onClick={() => void placeMove(x, y)}
-                      disabled={!canPlayTurn || !selectedPieceId}
-                      className={`flex items-center justify-center rounded-lg border text-xs font-medium transition ${
-                        isFilled
-                          ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
-                          : hoveredBoardCell?.x === x && hoveredBoardCell?.y === y && selectedPieceId
-                            ? canPlaceAtHoveredCell
-                              ? "border-emerald-500 bg-emerald-100 text-emerald-800"
-                              : "border-rose-500 bg-rose-100 text-rose-700"
+                        disabled={!canPlayTurn || !selectedPieceId}
+                        className={`flex items-center justify-center rounded-lg border text-xs font-medium transition ${
+                          isFilled
+                            ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
+                            : isPreviewCell
+                              ? canPlaceAtHoveredCell
+                                ? "border-emerald-500 bg-emerald-100 text-emerald-800"
+                                : "border-rose-500 bg-rose-100 text-rose-700"
                             : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-strong)]"
-                      } disabled:cursor-not-allowed disabled:opacity-80`}
+                        } disabled:cursor-not-allowed disabled:opacity-80`}
                       aria-label={`${x},${y} 칸`}
                     >
                       {cell ? cell.slice(-2) : ""}
@@ -338,7 +435,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
           <aside className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm">
             <section className="flex flex-col gap-2">
               <h2 className="text-xl font-semibold">현재 상태</h2>
-              <p className="text-sm text-black/60">
+              <p className="min-h-12 text-sm text-black/60">
                 {message ?? (canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다.")}
               </p>
               <p className="text-sm text-black/70">
@@ -346,6 +443,11 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
               </p>
               <p className="text-sm text-black/70">
                 현재 턴: {gameState.currentTurnSeat === "host" ? "HOST" : "GUEST"}
+              </p>
+              <p className="min-h-10 text-sm text-black/65">
+                {selectedPieceId && hoveredBoardCell
+                  ? `현재 미리보기: (${hoveredBoardCell.x}, ${hoveredBoardCell.y}) · ${canPlaceAtHoveredCell ? "배치 가능" : "배치 불가"}`
+                  : "블록을 선택하고 보드 위에 올리면 배치 가능 여부를 볼 수 있습니다."}
               </p>
             </section>
 
@@ -377,6 +479,13 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
                         <div className="font-semibold">{piece.id.replace("block", "블록 ")}</div>
                         <div className="text-xs opacity-80">{isUsed ? "사용 완료" : `${rotation * 90}°`}</div>
                       </div>
+
+                      <PieceShape
+                        mask={isSelected && previewMask ? previewMask : piece.currentMask}
+                        filledClassName={isSelected ? "bg-white/90" : "bg-[var(--accent)]"}
+                        emptyClassName={isSelected ? "bg-white/20" : "bg-[var(--surface)]"}
+                        cellClassName="h-3 w-3 rounded-[4px] border border-[var(--line)]"
+                      />
                     </button>
                   );
                 })}
