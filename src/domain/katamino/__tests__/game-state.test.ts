@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  clearSelectedPiece,
   createInitialGameSession,
   forfeitGame,
   placeSelectedPiece,
@@ -69,6 +70,16 @@ describe("katamino local game state", () => {
     expect(switchedState.selectedPieceId).toBe("block05");
     expect(switchedState.pieces.block03.rotation).toBe(0);
     expect(switchedState.pieces.block03.currentMask).toEqual(switchedState.pieces.block03.initialMask);
+  });
+
+  it("clearSelectedPiece는 현재 선택 블록을 초기 상태로 되돌리고 선택을 해제한다", () => {
+    const selectedState = selectPiece(createInitialGameSession(), "block03");
+    const rotatedState = rotateSelectedPiece(selectedState);
+    const clearedState = clearSelectedPiece(rotatedState);
+
+    expect(clearedState.selectedPieceId).toBe(null);
+    expect(clearedState.pieces.block03.rotation).toBe(0);
+    expect(clearedState.pieces.block03.currentMask).toEqual(clearedState.pieces.block03.initialMask);
   });
 
   it("세션 상태는 JSON 직렬화가 가능해야 한다", () => {

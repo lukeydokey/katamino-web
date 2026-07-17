@@ -119,6 +119,28 @@ export function selectPiece(state: LocalGameSession, pieceId: PieceId): LocalGam
   };
 }
 
+export function clearSelectedPiece(state: LocalGameSession): LocalGameSession {
+  if (state.selectedPieceId === null) {
+    return state;
+  }
+
+  const selectedPiece = state.pieces[state.selectedPieceId];
+
+  return {
+    ...state,
+    pieces: {
+      ...state.pieces,
+      [selectedPiece.id]: {
+        ...selectedPiece,
+        currentMask: cloneMask(selectedPiece.initialMask),
+        rotation: 0,
+      },
+    },
+    selectedPieceId: null,
+    message: "블록 선택 해제",
+  };
+}
+
 export function rotateSelectedPiece(state: LocalGameSession): LocalGameSession {
   if (state.phase !== "playing" || state.selectedPieceId === null) {
     return state;
