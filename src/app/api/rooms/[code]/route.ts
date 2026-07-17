@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { forfeitGame, type LocalGameSession } from "@/domain/katamino/game-state";
 import { summarizeRoomState, type RoomPlayerRecord } from "@/lib/rooms/service";
+import { isDeadlineExpired } from "@/lib/rooms/service";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { LocalGameSession } from "@/domain/katamino/game-state";
 
 interface RoomRouteContext {
   params: Promise<Record<string, string>>;
@@ -21,7 +22,7 @@ export async function GET(_: Request, context: RoomRouteContext) {
 
   const { data: room } = await supabase
     .from("rooms")
-    .select("id, code, status")
+    .select("id, code, status, turn_time_seconds")
     .eq("code", code)
     .single();
 
@@ -43,13 +44,42 @@ export async function GET(_: Request, context: RoomRouteContext) {
 
   const { data: roomGame } = await supabase
     .from("room_games")
-    .select("state_json")
+    .select("state_json, version, deadline_at")
     .eq("room_id", room.id)
     .maybeSingle();
 
-  const gameState = (roomGame?.state_json as LocalGameSession | null | undefined) ?? null;
+  let gameState = (roomGame?.state_json as LocalGameSession | null | undefined) ?? null;
+  let roomStatus = room.status;
+  let deadlineAt = roomGame?.deadline_at ?? null;
 
-  const summary = summarizeRoomState(room.code, room.status, normalizedPlayers, gameState);
+  if (gameState && roomStatus === "playing" && gameState.phase === "playing" && isDeadlineExpired(deadlineAt)) {
+    const expiredState = forfeitGame(gameState, gameState.currentTurnSeat);
+
+    await supabase
+      .from("room_games")
+      .update({ state_json: expiredState, version: (roomGame?.version ?? 0) + 1, deadline_at: null })
+      .eq("room_id", room.id)
+      .eq("version", roomGame?.version ?? 0);
+
+    await supabase.from("rooms").update({ status: "finished" }).eq("id", room.id);
+
+    gameState = {
+      ...expiredState,
+      finishedReason: "timeout",
+      message: `${gameState.currentTurnSeat} 시간 초과`,
+    };
+    roomStatus = "finished";
+    deadlineAt = null;
+  }
+
+  const summary = summarizeRoomState(
+    room.code,
+    roomStatus,
+    normalizedPlayers,
+    gameState,
+    room.turn_time_seconds,
+    deadlineAt,
+  );
 
   return NextResponse.json(summary);
 }

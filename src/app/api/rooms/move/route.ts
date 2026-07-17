@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { canPlacePiece, placePiece } from "@/domain/katamino/board";
-import type { LocalGameSession } from "@/domain/katamino/game-state";
+import { forfeitGame, type LocalGameSession } from "@/domain/katamino/game-state";
 import { rotateMaskClockwise } from "@/domain/katamino/pieces";
 import type { PieceMask, PlayerSeat } from "@/domain/katamino/types";
 import { getGuestSessionId } from "@/lib/guest-session";
+import { computeDeadlineAt, isDeadlineExpired } from "@/lib/rooms/service";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 interface MoveBody {
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
 
   const { data: room } = await supabase
     .from("rooms")
-    .select("id, code, status")
+    .select("id, code, status, turn_time_seconds")
     .eq("code", body.code)
     .single();
 
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
 
   const { data: roomGame } = await supabase
     .from("room_games")
-    .select("state_json, version")
+    .select("state_json, version, deadline_at")
     .eq("room_id", room.id)
     .single();
 
@@ -95,6 +96,24 @@ export async function POST(request: Request) {
 
   if (gameState.phase !== "playing") {
     return NextResponse.json({ message: "이미 종료된 게임입니다." }, { status: 409 });
+  }
+
+  if (isDeadlineExpired(roomGame.deadline_at)) {
+    const expiredState = {
+      ...forfeitGame(gameState, gameState.currentTurnSeat),
+      finishedReason: "timeout" as const,
+      message: `${gameState.currentTurnSeat} 시간 초과`,
+    };
+
+    await supabase
+      .from("room_games")
+      .update({ state_json: expiredState, version: roomGame.version + 1, deadline_at: null })
+      .eq("room_id", room.id)
+      .eq("version", roomGame.version);
+
+    await supabase.from("rooms").update({ status: "finished" }).eq("id", room.id);
+
+    return NextResponse.json({ message: "현재 턴의 시간이 종료되었습니다." }, { status: 409 });
   }
 
   if (gameState.currentTurnSeat !== requester.seat) {
@@ -138,7 +157,11 @@ export async function POST(request: Request) {
 
   const { data: updatedGame, error } = await supabase
     .from("room_games")
-    .update({ state_json: nextState, version: roomGame.version + 1 })
+    .update({
+      state_json: nextState,
+      version: roomGame.version + 1,
+      deadline_at: computeDeadlineAt(room.turn_time_seconds),
+    })
     .eq("room_id", room.id)
     .eq("version", roomGame.version)
     .select("version")

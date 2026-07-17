@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getGuestSessionId } from "@/lib/guest-session";
 import {
   canStartRoom,
+  computeDeadlineAt,
   createInitialRoomSnapshot,
   type RoomPlayerRecord,
 } from "@/lib/rooms/service";
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
 
   const { data: room } = await supabase
     .from("rooms")
-    .select("id, code, status")
+    .select("id, code, status, turn_time_seconds")
     .eq("code", body.code)
     .single();
 
@@ -63,11 +64,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "현재 상태에서는 게임을 시작할 수 없습니다." }, { status: 409 });
   }
 
+  const deadlineAt = computeDeadlineAt(room.turn_time_seconds);
   const snapshot = createInitialRoomSnapshot();
   const { error: gameError } = await supabase.from("room_games").upsert({
     room_id: room.id,
     state_json: snapshot,
     version: 1,
+    deadline_at: deadlineAt,
   });
 
   if (gameError) {

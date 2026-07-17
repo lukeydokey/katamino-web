@@ -13,6 +13,8 @@ export interface RoomSnapshotSummary {
   players: RoomPlayerRecord[];
   canStart: boolean;
   gameState: LocalGameSession | null;
+  turnTimeSeconds: number;
+  deadlineAt: string | null;
 }
 
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -59,6 +61,8 @@ export function summarizeRoomState(
   status: RoomStatus,
   players: RoomPlayerRecord[],
   gameState: LocalGameSession | null,
+  turnTimeSeconds: number,
+  deadlineAt: string | null,
 ): RoomSnapshotSummary {
   return {
     roomCode,
@@ -66,5 +70,23 @@ export function summarizeRoomState(
     players,
     canStart: canStartRoom(status, players),
     gameState,
+    turnTimeSeconds,
+    deadlineAt,
   };
+}
+
+export function computeDeadlineAt(turnTimeSeconds: number) {
+  if (turnTimeSeconds <= 0) {
+    return null;
+  }
+
+  return new Date(Date.now() + turnTimeSeconds * 1000).toISOString();
+}
+
+export function isDeadlineExpired(deadlineAt: string | null) {
+  if (!deadlineAt) {
+    return false;
+  }
+
+  return new Date(deadlineAt).getTime() <= Date.now();
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createInitialGameSession, type LocalGameSession } from "@/domain/katamino/game-state";
 import { getGuestSessionId } from "@/lib/guest-session";
+import { computeDeadlineAt } from "@/lib/rooms/service";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 interface RematchBody {
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
 
   const { data: room } = await supabase
     .from("rooms")
-    .select("id, code, status")
+    .select("id, code, status, turn_time_seconds")
     .eq("code", body.code)
     .single();
 
@@ -78,7 +79,11 @@ export async function POST(request: Request) {
 
   const { data: updatedGame, error: gameError } = await supabase
     .from("room_games")
-    .update({ state_json: nextState, version: roomGame.version + 1 })
+    .update({
+      state_json: nextState,
+      version: roomGame.version + 1,
+      deadline_at: computeDeadlineAt(room.turn_time_seconds),
+    })
     .eq("room_id", room.id)
     .eq("version", roomGame.version)
     .select("version")

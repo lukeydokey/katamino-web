@@ -19,6 +19,8 @@ interface RoomSummary {
   players: RoomPlayerRecord[];
   canStart: boolean;
   gameState: LocalGameSession | null;
+  turnTimeSeconds: number;
+  deadlineAt: string | null;
 }
 
 interface RoomPageClientProps {
@@ -81,6 +83,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
   const [selectedPieceId, setSelectedPieceId] = useState<PieceId | null>(null);
   const [rotation, setRotation] = useState(0);
   const [hoveredBoardCell, setHoveredBoardCell] = useState<{ x: number; y: number } | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const selectedPieceIdRef = useRef<PieceId | null>(null);
   const roomChannelRef = useRef<RealtimeChannel | null>(null);
   const boardArticleRef = useRef<HTMLElement | null>(null);
@@ -187,6 +190,28 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
 
     return "패배";
   }, [gameState?.winnerSeat, isFinishedRoom, normalizedSeat]);
+
+  const remainingSeconds = (() => {
+    if (!roomSummary?.deadlineAt) {
+      return null;
+    }
+
+    return Math.max(0, Math.ceil((new Date(roomSummary.deadlineAt).getTime() - nowTick) / 1000));
+  })();
+
+  useEffect(() => {
+    if (!roomSummary?.deadlineAt) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setNowTick(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [roomSummary?.deadlineAt]);
 
   async function copyRoomCode() {
     try {
@@ -512,6 +537,15 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
           <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-4">
             <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">참여 인원</p>
             <p className="mt-2 text-lg font-semibold">{playerCount} / 2</p>
+          </div>
+          <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-4 md:col-span-3">
+            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">턴 시간 제한</p>
+            <p className="mt-2 text-lg font-semibold">
+              {roomSummary?.turnTimeSeconds ? `${roomSummary.turnTimeSeconds}초` : "제한 없음"}
+            </p>
+            {remainingSeconds !== null ? (
+              <p className="mt-2 text-sm text-black/60">현재 턴 남은 시간: {remainingSeconds}초</p>
+            ) : null}
           </div>
         </div>
 
