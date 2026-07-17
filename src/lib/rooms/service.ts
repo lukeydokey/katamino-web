@@ -15,6 +15,7 @@ export interface RoomSnapshotSummary {
   gameState: LocalGameSession | null;
   turnTimeSeconds: number;
   deadlineAt: string | null;
+  spectatorCount: number;
 }
 
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -63,6 +64,7 @@ export function summarizeRoomState(
   gameState: LocalGameSession | null,
   turnTimeSeconds: number,
   deadlineAt: string | null,
+  spectatorCount: number,
 ): RoomSnapshotSummary {
   return {
     roomCode,
@@ -72,6 +74,7 @@ export function summarizeRoomState(
     gameState,
     turnTimeSeconds,
     deadlineAt,
+    spectatorCount,
   };
 }
 

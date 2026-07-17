@@ -54,7 +54,7 @@ describe("room service helpers", () => {
       summarizeRoomState("ABC123", "waiting", [
         { guestId: "g1", seat: "host" },
         { guestId: "g2", seat: "guest" },
-      ], createInitialRoomSnapshot(), 30, "2026-07-18T00:00:00.000Z"),
+      ], createInitialRoomSnapshot(), 30, "2026-07-18T00:00:00.000Z", 0),
     ).toEqual({
       roomCode: "ABC123",
       status: "waiting",
@@ -66,6 +66,7 @@ describe("room service helpers", () => {
       gameState: createInitialRoomSnapshot(),
       turnTimeSeconds: 30,
       deadlineAt: "2026-07-18T00:00:00.000Z",
+      spectatorCount: 0,
     });
   });
 

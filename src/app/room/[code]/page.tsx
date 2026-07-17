@@ -12,6 +12,7 @@ export default async function RoomPage({ params }: RoomPageProps) {
   const guestId = await getGuestSessionId();
 
   let seat: string | undefined;
+  let viewerRole: "player" | "spectator" | "viewer" = "viewer";
 
   if (supabase && guestId) {
     const { data: room } = await supabase.from("rooms").select("id").eq("code", code).single();
@@ -25,8 +26,23 @@ export default async function RoomPage({ params }: RoomPageProps) {
         .single();
 
       seat = player?.seat;
+
+      if (player?.seat) {
+        viewerRole = "player";
+      } else {
+        const { data: spectator } = await supabase
+          .from("room_spectators")
+          .select("guest_id")
+          .eq("room_id", room.id)
+          .eq("guest_id", guestId)
+          .maybeSingle();
+
+        if (spectator) {
+          viewerRole = "spectator";
+        }
+      }
     }
   }
 
-  return <RoomPageClient roomCode={code} seat={seat} />;
+  return <RoomPageClient roomCode={code} seat={seat} viewerRole={viewerRole} />;
 }

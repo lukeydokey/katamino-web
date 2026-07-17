@@ -21,11 +21,13 @@ interface RoomSummary {
   gameState: LocalGameSession | null;
   turnTimeSeconds: number;
   deadlineAt: string | null;
+  spectatorCount: number;
 }
 
 interface RoomPageClientProps {
   roomCode: string;
   seat: string | undefined;
+  viewerRole: "player" | "spectator" | "viewer";
 }
 
 function PieceShape({
@@ -76,9 +78,11 @@ function getPreviewCells(mask: number[][], x: number, y: number) {
   return previewCells;
 }
 
-export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
+export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [messages, setMessages] = useState<Array<{ id: string; guest_id: string; body: string; created_at: string }>>([]);
+  const [chatInput, setChatInput] = useState("");
   const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
   const [selectedPieceId, setSelectedPieceId] = useState<PieceId | null>(null);
   const [rotation, setRotation] = useState(0);
@@ -138,6 +142,8 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
   }, [roomSummary]);
 
   const canPlayTurn = gameState && normalizedSeat === gameState.currentTurnSeat;
+  const spectatorCount = roomSummary?.spectatorCount ?? 0;
+  const canChat = viewerRole === "player" || viewerRole === "spectator";
 
   const seatLabel = normalizedSeat === "host" ? "HOST" : normalizedSeat === "guest" ? "GUEST" : "미확인";
 
@@ -227,6 +233,33 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
   }, [selectedPieceId]);
 
   useEffect(() => {
+    let active = true;
+
+    async function fetchMessages() {
+      const response = await fetch(`/api/rooms/${roomCode}/messages`, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (!active || !response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as {
+        messages: Array<{ id: string; guest_id: string; body: string; created_at: string }>;
+      };
+
+      setMessages(payload.messages ?? []);
+    }
+
+    void fetchMessages();
+
+    return () => {
+      active = false;
+    };
+  }, [roomCode]);
+
+  useEffect(() => {
     const articleElement = boardArticleRef.current;
 
     if (!articleElement) {
@@ -308,6 +341,21 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
       })
       .on("broadcast", { event: "room-updated" }, () => {
         void fetchRoomSummary();
+      })
+      .on("broadcast", { event: "chat-updated" }, async () => {
+        const response = await fetch(`/api/rooms/${roomCode}/messages`, {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as {
+          messages: Array<{ id: string; guest_id: string; body: string; created_at: string }>;
+        };
+        setMessages(payload.messages ?? []);
       })
       .on("presence", { event: "sync" }, () => {
         void fetchRoomSummary();
@@ -504,6 +552,37 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
       });
   }
 
+  async function sendMessage() {
+    const body = chatInput.trim();
+
+    if (!body) {
+      return;
+    }
+
+    const response = await fetch(`/api/rooms/${roomCode}/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ body }),
+    });
+
+    const payload = (await response.json()) as { message?: string; ok?: boolean };
+
+    if (!response.ok) {
+      setMessage(payload.message ?? "채팅 전송에 실패했습니다.");
+      return;
+    }
+
+    setChatInput("");
+
+    await roomChannelRef.current?.send({
+      type: "broadcast",
+      event: "chat-updated",
+      payload: { roomCode },
+    });
+  }
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-8 px-6 py-10">
       <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm">
@@ -547,6 +626,10 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
               <p className="mt-2 text-sm text-black/60">현재 턴 남은 시간: {remainingSeconds}초</p>
             ) : null}
           </div>
+          <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-4 md:col-span-3">
+            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">관전자</p>
+            <p className="mt-2 text-lg font-semibold">{spectatorCount}명</p>
+          </div>
         </div>
 
         <div className="mt-6 rounded-2xl bg-[var(--surface-strong)] p-4 text-sm leading-6 text-black/75">
@@ -567,6 +650,12 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
               <span className="ml-2 text-black/60">입장 완료</span>
             </li>
           ))}
+          {viewerRole === "spectator" ? (
+            <li className="rounded-xl border border-[var(--line)] bg-white px-4 py-3">
+              <span className="font-semibold">SPECTATOR</span>
+              <span className="ml-2 text-black/60">관전 중</span>
+            </li>
+          ) : null}
         </ul>
 
         <div className="mt-6 flex flex-wrap gap-3">
@@ -581,7 +670,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
             </button>
           ) : null}
 
-          {isPlayingRoom ? (
+          {isPlayingRoom && viewerRole === "player" ? (
             <button
               type="button"
               onClick={() => void forfeitRoom()}
@@ -612,7 +701,9 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
               <div>
                 <h2 className="text-xl font-semibold">공유 게임 보드</h2>
                 <p className="text-sm text-black/60">
-                  {canPlayTurn
+                  {viewerRole === "spectator"
+                    ? "관전 중입니다. 보드 상태와 채팅을 실시간으로 확인할 수 있습니다."
+                    : canPlayTurn
                     ? "지금은 내 차례입니다. 블록을 선택하고 놓을 위치를 정해 보세요."
                     : "상대 차례입니다. 보드 상태가 자동으로 갱신됩니다."}
                 </p>
@@ -621,7 +712,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
               <button
                 type="button"
                 onClick={() => setRotation((current) => (current + 1) % 4)}
-                disabled={!canPlayTurn || !selectedPieceId}
+                disabled={viewerRole !== "player" || !canPlayTurn || !selectedPieceId}
                 className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 선택 블록 회전
@@ -643,7 +734,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
                       onFocus={() => setHoveredBoardCell({ x, y })}
                       onMouseLeave={() => setHoveredBoardCell(null)}
                       onClick={() => void placeMove(x, y)}
-                        disabled={!canPlayTurn || !selectedPieceId}
+                        disabled={viewerRole !== "player" || !canPlayTurn || !selectedPieceId}
                         className={`flex items-center justify-center rounded-lg border text-xs font-medium transition ${
                           isFilled && cell
                             ? `${getPieceColor(cell).border} ${getPieceColor(cell).soft} ${getPieceColor(cell).text}`
@@ -667,7 +758,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
             <section className="flex flex-col gap-2">
               <h2 className="text-xl font-semibold">현재 상태</h2>
               <p className="min-h-12 text-sm text-black/60">
-                {message ?? (canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다.")}
+                {message ?? (viewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다.")}
               </p>
               <p className="text-sm text-black/70">
                 선택된 블록: {selectedPieceId ? selectedPieceId.replace("block", "블록 ") : "없음"}
@@ -693,7 +784,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
                     <button
                       key={piece.id}
                       type="button"
-                      disabled={isUsed || !canPlayTurn}
+                       disabled={viewerRole !== "player" || isUsed || !canPlayTurn}
                       onClick={() => {
                         setSelectedPieceId((current) => (current === piece.id ? null : piece.id));
                         setRotation(0);
@@ -720,6 +811,39 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
                     </button>
                   );
                 })}
+              </div>
+            </section>
+
+            <section className="flex flex-col gap-3">
+              <h3 className="text-lg font-semibold">채팅</h3>
+              <div className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75">
+                {messages.length > 0 ? (
+                  messages.map((chat) => (
+                    <div key={chat.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-2">
+                      <p className="text-xs text-black/45">{chat.created_at}</p>
+                      <p className="mt-1 break-words">{chat.body}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-black/50">아직 채팅이 없습니다.</p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  placeholder={canChat ? "메시지 입력" : "채팅 불가"}
+                  disabled={!canChat}
+                  className="flex-1 rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => void sendMessage()}
+                  disabled={!canChat || !chatInput.trim()}
+                  className="rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  전송
+                </button>
               </div>
             </section>
           </aside>
