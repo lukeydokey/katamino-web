@@ -23,13 +23,13 @@ describe("Home 페이지", () => {
     );
   });
 
-  it("Katamino 웹 재구현 제목을 렌더링한다", () => {
+  it("Katamino 온라인 제목을 렌더링한다", () => {
     render(<Home />);
 
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: "Katamino 웹 재구현",
+        name: "Katamino 온라인",
       }),
     ).toBeInTheDocument();
   });

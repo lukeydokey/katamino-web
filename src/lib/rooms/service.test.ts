@@ -5,6 +5,7 @@ import {
   generateRoomCode,
   getAvailableSeat,
   serializeRoomSnapshot,
+  summarizeRoomState,
 } from "@/lib/rooms/service";
 
 describe("room service helpers", () => {
@@ -44,5 +45,22 @@ describe("room service helpers", () => {
 
   it("초기 room snapshot은 직렬화 가능해야 한다", () => {
     expect(serializeRoomSnapshot()).toEqual(createInitialRoomSnapshot());
+  });
+
+  it("room summary는 시작 가능 여부를 함께 계산한다", () => {
+    expect(
+      summarizeRoomState("ABC123", "waiting", [
+        { guestId: "g1", seat: "host" },
+        { guestId: "g2", seat: "guest" },
+      ]),
+    ).toEqual({
+      roomCode: "ABC123",
+      status: "waiting",
+      players: [
+        { guestId: "g1", seat: "host" },
+        { guestId: "g2", seat: "guest" },
+      ],
+      canStart: true,
+    });
   });
 });

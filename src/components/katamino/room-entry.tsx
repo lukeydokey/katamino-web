@@ -32,18 +32,18 @@ export function RoomEntry() {
 
       if (response.ok && payload.ok) {
         setSessionStatus("ready");
-        setMessage("guest 세션이 준비되었습니다. 이제 방을 만들거나 참가할 수 있습니다.");
+        setMessage("준비가 끝났습니다. 방을 만들거나 룸 코드로 참가해 보세요.");
         return;
       }
 
       if (response.status === 503) {
         setSessionStatus("disabled");
-        setMessage(payload.message ?? "Supabase 환경 변수가 아직 설정되지 않아 룸 기능은 비활성화되어 있습니다.");
+        setMessage(payload.message ?? "현재는 온라인 룸 기능을 사용할 수 없습니다.");
         return;
       }
 
       setSessionStatus("failed");
-      setMessage(payload.message ?? "guest 세션 준비에 실패했습니다.");
+      setMessage(payload.message ?? "준비 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
     }
 
     void bootstrap();
@@ -105,7 +105,7 @@ export function RoomEntry() {
         <div>
           <h2 className="text-xl font-semibold">온라인 룸 진입</h2>
           <p className="text-sm leading-6 text-black/65">
-            Supabase guest 세션 기준으로 방을 만들거나 참가합니다. 현재는 room lifecycle 흐름과 API 연결을 먼저 붙인 상태입니다.
+            새 방을 만들고 상대를 기다리거나, 받은 룸 코드로 바로 참가할 수 있습니다.
           </p>
         </div>
 
@@ -123,7 +123,7 @@ export function RoomEntry() {
           <input
             value={joinCode}
             onChange={(event) => setJoinCode(event.target.value)}
-            placeholder="참가할 룸 코드 입력"
+            placeholder="룸 코드 입력"
             className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)]"
           />
 

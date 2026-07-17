@@ -6,6 +6,13 @@ export interface RoomPlayerRecord {
   seat: PlayerSeat;
 }
 
+export interface RoomSnapshotSummary {
+  roomCode: string;
+  status: RoomStatus;
+  players: RoomPlayerRecord[];
+  canStart: boolean;
+}
+
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 export function generateRoomCode(random = Math.random, length = 6) {
@@ -43,4 +50,17 @@ export function createInitialRoomSnapshot() {
 
 export function serializeRoomSnapshot() {
   return JSON.parse(JSON.stringify(createInitialRoomSnapshot()));
+}
+
+export function summarizeRoomState(
+  roomCode: string,
+  status: RoomStatus,
+  players: RoomPlayerRecord[],
+): RoomSnapshotSummary {
+  return {
+    roomCode,
+    status,
+    players,
+    canStart: canStartRoom(status, players),
+  };
 }
