@@ -90,6 +90,8 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
   const canStart = normalizedSeat === "host" && roomSummary?.canStart;
   const gameState = roomSummary?.gameState ?? null;
   const selectedPiece = selectedPieceId && gameState ? gameState.pieces[selectedPieceId] : null;
+  const isWaitingRoom = roomSummary?.status === "waiting";
+  const isPlayingRoom = roomSummary?.status === "playing";
 
   const previewMask = useMemo(() => {
     if (!selectedPiece) {
@@ -132,6 +134,53 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
   }, [roomSummary]);
 
   const canPlayTurn = gameState && normalizedSeat === gameState.currentTurnSeat;
+
+  const seatLabel = normalizedSeat === "host" ? "HOST" : normalizedSeat === "guest" ? "GUEST" : "미확인";
+
+  const roomHeadline = useMemo(() => {
+    if (!roomSummary) {
+      return "룸 상태를 불러오는 중입니다.";
+    }
+
+    if (isWaitingRoom) {
+      return canStart ? "상대가 모두 들어왔습니다. 게임을 시작할 수 있습니다." : "상대가 방에 들어오기를 기다리는 중입니다.";
+    }
+
+    if (isPlayingRoom) {
+      return canPlayTurn ? "지금은 내 차례입니다. 둘 블록과 위치를 정해 보세요." : "상대 차례입니다. 보드가 자동으로 갱신됩니다.";
+    }
+
+    return "현재 게임이 종료된 상태입니다.";
+  }, [canPlayTurn, canStart, isPlayingRoom, isWaitingRoom, roomSummary]);
+
+  const roomHint = useMemo(() => {
+    if (!roomSummary) {
+      return "잠시만 기다리면 최신 상태를 불러옵니다.";
+    }
+
+    if (isWaitingRoom) {
+      return normalizedSeat === "host"
+        ? "룸 코드를 공유하고 상대가 참가하면 바로 시작할 수 있습니다."
+        : "호스트가 게임을 시작하면 자동으로 보드가 열립니다.";
+    }
+
+    if (isPlayingRoom) {
+      return normalizedSeat === gameState?.currentTurnSeat
+        ? "블록을 선택하고 보드 위에 올리면 배치 가능 여부를 바로 확인할 수 있습니다."
+        : "상대가 수를 두면 이 화면도 곧바로 갱신됩니다.";
+    }
+
+    return "같은 상대와 다시 플레이하거나 새 방을 만들어 이어갈 수 있습니다.";
+  }, [gameState?.currentTurnSeat, isPlayingRoom, isWaitingRoom, normalizedSeat, roomSummary]);
+
+  async function copyRoomCode() {
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      setMessage("룸 코드를 복사했습니다.");
+    } catch {
+      setMessage("룸 코드 복사에 실패했습니다.");
+    }
+  }
 
   useEffect(() => {
     selectedPieceIdRef.current = selectedPieceId;
@@ -336,25 +385,45 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
         <p className="text-sm font-semibold tracking-[0.2em] text-[var(--accent)] uppercase">
           Online Room
         </p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight">룸 {roomCode}</h1>
-        <p className="mt-3 text-sm leading-6 text-black/65">
-          현재 좌석: <strong>{seat ?? "미확인"}</strong>
-        </p>
-        <p className="mt-2 text-sm leading-6 text-black/65">
-          현재 상태: <strong>{roomStatusLabel}</strong>
-        </p>
-        <p className="mt-2 text-sm leading-6 text-black/65">
-          참여 인원: <strong>{playerCount} / 2</strong>
-        </p>
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-2">
+            <h1 className="text-3xl font-bold tracking-tight">룸 {roomCode}</h1>
+            <p className="text-sm leading-6 text-black/65">{roomHeadline}</p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void copyRoomCode()}
+            className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm font-medium text-black/75"
+          >
+            룸 코드 복사
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-4">
+            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">내 좌석</p>
+            <p className="mt-2 text-lg font-semibold">{seatLabel}</p>
+          </div>
+          <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-4">
+            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">방 상태</p>
+            <p className="mt-2 text-lg font-semibold">{roomStatusLabel}</p>
+          </div>
+          <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-4">
+            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">참여 인원</p>
+            <p className="mt-2 text-lg font-semibold">{playerCount} / 2</p>
+          </div>
+        </div>
 
         <div className="mt-6 rounded-2xl bg-[var(--surface-strong)] p-4 text-sm leading-6 text-black/75">
-          같은 룸에 두 명이 모이면 host가 게임을 시작할 수 있습니다. 상대가 들어올 때까지 잠시 기다려 주세요.
+          {roomHint}
         </div>
 
         <ul className="mt-4 space-y-2 text-sm text-black/70">
           {roomSummary?.players.map((player) => (
             <li key={`${player.guestId}-${player.seat}`} className="rounded-xl border border-[var(--line)] bg-white px-4 py-3">
-              {player.seat === "host" ? "HOST" : "GUEST"} 입장 완료
+              <span className="font-semibold">{player.seat === "host" ? "HOST" : "GUEST"}</span>
+              <span className="ml-2 text-black/60">입장 완료</span>
             </li>
           ))}
         </ul>
@@ -366,11 +435,11 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
             disabled={isStarting || !canStart}
             className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            게임 시작 요청
+            {canStart ? "게임 시작" : normalizedSeat === "host" ? "상대 대기 중" : "호스트 대기 중"}
           </button>
         </div>
 
-        {message ? <p className="mt-4 text-sm text-[var(--accent)]">{message}</p> : null}
+        <p className="mt-4 min-h-6 text-sm text-[var(--accent)]">{message ?? ""}</p>
       </section>
 
       {gameState ? (
