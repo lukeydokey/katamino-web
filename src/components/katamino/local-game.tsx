@@ -78,7 +78,10 @@ export function LocalGame() {
           <p className="text-sm text-black/70">
             선택된 블록: {selectedPiece ? formatPieceLabel(selectedPiece.id) : "없음"}
           </p>
-          <p className="text-sm text-black/70">사용 완료 블록 수: {gameState.usedPieceIds.size} / 12</p>
+          <p className="text-sm text-black/70">
+            현재 턴: {gameState.currentTurnSeat === "host" ? "HOST" : "GUEST"}
+          </p>
+          <p className="text-sm text-black/70">사용 완료 블록 수: {gameState.usedPieceIds.length} / 12</p>
         </section>
 
         <section className="flex flex-col gap-3">
@@ -102,7 +105,7 @@ export function LocalGame() {
           <h3 className="text-lg font-semibold">블록 트레이</h3>
           <div className="grid grid-cols-2 gap-2">
             {pieceList.map((piece) => {
-              const isUsed = gameState.usedPieceIds.has(piece.id);
+              const isUsed = gameState.usedPieceIds.includes(piece.id);
               const isSelected = gameState.selectedPieceId === piece.id;
 
               return (
