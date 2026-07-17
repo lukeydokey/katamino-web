@@ -5,6 +5,7 @@ import { canPlacePiece } from "@/domain/katamino/board";
 import { rotateMaskClockwise } from "@/domain/katamino/pieces";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { LocalGameSession } from "@/domain/katamino/game-state";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { PieceId, PieceMask, PlayerSeat, RoomStatus } from "@/domain/katamino/types";
 
 interface RoomPlayerRecord {
@@ -81,6 +82,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
   const [rotation, setRotation] = useState(0);
   const [hoveredBoardCell, setHoveredBoardCell] = useState<{ x: number; y: number } | null>(null);
   const selectedPieceIdRef = useRef<PieceId | null>(null);
+  const roomChannelRef = useRef<RealtimeChannel | null>(null);
   const boardArticleRef = useRef<HTMLElement | null>(null);
 
   const normalizedSeat = seat === "host" || seat === "guest" ? seat : undefined;
@@ -222,6 +224,8 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
         void fetchRoomSummary();
       });
 
+    roomChannelRef.current = channel ?? null;
+
     channel?.subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
         await channel.track({
@@ -236,14 +240,13 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
       active = false;
       window.clearInterval(intervalId);
       channel?.unsubscribe();
+      roomChannelRef.current = null;
     };
   }, [normalizedSeat, roomCode]);
 
   async function startRoom() {
     setIsStarting(true);
     setMessage(null);
-
-    const client = getSupabaseBrowserClient();
 
     try {
       const response = await fetch("/api/rooms/start", {
@@ -260,9 +263,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
         return;
       }
 
-      await client
-        ?.channel(`room:${roomCode}`)
-        .send({
+      await roomChannelRef.current?.send({
           type: "broadcast",
           event: "room-updated",
           payload: {
@@ -319,9 +320,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
         : current,
     );
 
-    await getSupabaseBrowserClient()
-      ?.channel(`room:${roomCode}`)
-      .send({
+    await roomChannelRef.current?.send({
         type: "broadcast",
         event: "room-updated",
         payload: {
