@@ -3,7 +3,11 @@ import { ensureGuestSessionId } from "@/lib/guest-session";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { generateRoomCode } from "@/lib/rooms/service";
 
-export async function POST() {
+interface CreateRoomBody {
+  turnTimeSeconds?: number;
+}
+
+export async function POST(request: Request) {
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
@@ -19,10 +23,14 @@ export async function POST() {
     return NextResponse.json({ message: "인증된 guest 세션이 필요합니다." }, { status: 401 });
   }
 
+  const body = (await request.json().catch(() => ({}))) as CreateRoomBody;
+  const turnTimeSeconds =
+    typeof body.turnTimeSeconds === "number" && body.turnTimeSeconds >= 0 ? body.turnTimeSeconds : 0;
+
   const code = generateRoomCode();
   const { data: room, error: roomError } = await supabase
     .from("rooms")
-    .insert({ code, status: "waiting" })
+    .insert({ code, status: "waiting", turn_time_seconds: turnTimeSeconds })
     .select("id, code, status")
     .single();
 
@@ -40,5 +48,5 @@ export async function POST() {
     return NextResponse.json({ message: "호스트 참가 처리에 실패했습니다." }, { status: 500 });
   }
 
-  return NextResponse.json({ roomCode: room.code, seat: "host" });
+  return NextResponse.json({ roomCode: room.code, seat: "host", turnTimeSeconds });
 }

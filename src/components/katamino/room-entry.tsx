@@ -13,6 +13,7 @@ export function RoomEntry() {
   const router = useRouter();
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>("checking");
   const [joinCode, setJoinCode] = useState("");
+  const [turnTimeSeconds, setTurnTimeSeconds] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -60,8 +61,12 @@ export function RoomEntry() {
     try {
       const response = await fetch("/api/rooms/create", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ turnTimeSeconds }),
       });
-      const payload = (await response.json()) as { message?: string; roomCode?: string; seat?: string };
+      const payload = (await response.json()) as { message?: string; roomCode?: string; seat?: string; turnTimeSeconds?: number };
 
       if (!response.ok || !payload.roomCode) {
         setMessage(payload.message ?? "방 생성에 실패했습니다.");
@@ -135,6 +140,23 @@ export function RoomEntry() {
           >
             방 참가하기
           </button>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-sm font-medium text-black/70" htmlFor="turn-time-seconds">
+            턴 시간 제한
+          </label>
+          <select
+            id="turn-time-seconds"
+            value={turnTimeSeconds}
+            onChange={(event) => setTurnTimeSeconds(Number(event.target.value))}
+            className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)]"
+          >
+            <option value={0}>제한 없음</option>
+            <option value={30}>30초</option>
+            <option value={60}>60초</option>
+            <option value={120}>120초</option>
+          </select>
         </div>
 
         <button
