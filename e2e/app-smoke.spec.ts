@@ -7,7 +7,7 @@ test("로컬 Katamino 기본 배치 흐름이 동작한다", async ({ page }) =>
     page.getByRole("heading", { level: 1, name: "Katamino 웹 재구현" }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "블록 12 회전 0°" }).click();
+  await page.getByRole("button", { name: /블록 12/ }).click();
   await page.getByRole("button", { name: "선택 블록 회전" }).click();
   await page.getByRole("button", { name: "3,3 칸" }).click();
 
