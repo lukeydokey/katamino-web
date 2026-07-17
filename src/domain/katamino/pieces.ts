@@ -21,6 +21,81 @@ const LEGACY_PIECE_MASKS = {
   block12: ["00000", "00100", "01110", "00100", "00000"],
 } satisfies Record<PieceId, string[]>;
 
+export const PIECE_COLOR_MAP = {
+  block01: {
+    fill: "bg-rose-500",
+    soft: "bg-rose-100",
+    border: "border-rose-500",
+    text: "text-rose-900",
+  },
+  block02: {
+    fill: "bg-orange-500",
+    soft: "bg-orange-100",
+    border: "border-orange-500",
+    text: "text-orange-900",
+  },
+  block03: {
+    fill: "bg-amber-500",
+    soft: "bg-amber-100",
+    border: "border-amber-500",
+    text: "text-amber-900",
+  },
+  block04: {
+    fill: "bg-lime-500",
+    soft: "bg-lime-100",
+    border: "border-lime-500",
+    text: "text-lime-900",
+  },
+  block05: {
+    fill: "bg-emerald-500",
+    soft: "bg-emerald-100",
+    border: "border-emerald-500",
+    text: "text-emerald-900",
+  },
+  block06: {
+    fill: "bg-teal-500",
+    soft: "bg-teal-100",
+    border: "border-teal-500",
+    text: "text-teal-900",
+  },
+  block07: {
+    fill: "bg-cyan-500",
+    soft: "bg-cyan-100",
+    border: "border-cyan-500",
+    text: "text-cyan-900",
+  },
+  block08: {
+    fill: "bg-sky-500",
+    soft: "bg-sky-100",
+    border: "border-sky-500",
+    text: "text-sky-900",
+  },
+  block09: {
+    fill: "bg-blue-500",
+    soft: "bg-blue-100",
+    border: "border-blue-500",
+    text: "text-blue-900",
+  },
+  block10: {
+    fill: "bg-indigo-500",
+    soft: "bg-indigo-100",
+    border: "border-indigo-500",
+    text: "text-indigo-900",
+  },
+  block11: {
+    fill: "bg-violet-500",
+    soft: "bg-violet-100",
+    border: "border-violet-500",
+    text: "text-violet-900",
+  },
+  block12: {
+    fill: "bg-fuchsia-500",
+    soft: "bg-fuchsia-100",
+    border: "border-fuchsia-500",
+    text: "text-fuchsia-900",
+  },
+} satisfies Record<PieceId, { fill: string; soft: string; border: string; text: string }>;
+
 function parseMask(rows: string[]): PieceMask {
   return rows.map((row) =>
     row.split("").map((cell) => (cell === "1" ? 1 : 0) as BinaryCell),
@@ -72,4 +147,8 @@ export function createPieceMap(): Record<PieceId, PieceDefinition> {
     },
     {} as Record<PieceId, PieceDefinition>,
   );
+}
+
+export function getPieceColor(pieceId: PieceId) {
+  return PIECE_COLOR_MAP[pieceId];
 }

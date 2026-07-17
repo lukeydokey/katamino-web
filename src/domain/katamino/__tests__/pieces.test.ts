@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createPieceMap,
+  getPieceColor,
   getLegacyPieces,
   rotateMaskClockwise,
 } from "@/domain/katamino/pieces";
@@ -80,6 +81,19 @@ describe("katamino piece definitions", () => {
 
     for (const [pieceId, expectedMask] of Object.entries(expectedLegacyMasks)) {
       expect(serializeMask(pieceMap[pieceId as keyof typeof pieceMap].mask)).toEqual(expectedMask);
+    }
+  });
+
+  it("각 블록은 색상 토큰을 가진다", () => {
+    const pieceMap = createPieceMap();
+
+    for (const pieceId of Object.keys(pieceMap)) {
+      expect(getPieceColor(pieceId as keyof typeof pieceMap)).toMatchObject({
+        fill: expect.stringContaining("bg-"),
+        soft: expect.stringContaining("bg-"),
+        border: expect.stringContaining("border-"),
+        text: expect.stringContaining("text-"),
+      });
     }
   });
 });
