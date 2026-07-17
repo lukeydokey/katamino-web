@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createInitialGameSession } from "@/domain/katamino/game-state";
+import { createInitialGameSession, type LocalGameSession } from "@/domain/katamino/game-state";
 import { getGuestSessionId } from "@/lib/guest-session";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -39,6 +39,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "해당 코드를 가진 방이 없습니다." }, { status: 404 });
   }
 
+  if (room.status !== "finished") {
+    return NextResponse.json({ message: "종료된 게임에서만 다시 시작할 수 있습니다." }, { status: 409 });
+  }
+
   const { data: players } = await supabase
     .from("room_players")
     .select("guest_id, seat")
@@ -54,15 +58,38 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "host만 다시 시작할 수 있습니다." }, { status: 403 });
   }
 
+  if (!players || players.length !== 2) {
+    return NextResponse.json({ message: "두 플레이어가 모두 있어야 다시 시작할 수 있습니다." }, { status: 409 });
+  }
+
+  const { data: roomGame } = await supabase
+    .from("room_games")
+    .select("state_json, version")
+    .eq("room_id", room.id)
+    .single();
+
+  const gameState = roomGame?.state_json as LocalGameSession | undefined;
+
+  if (!roomGame || !gameState || gameState.phase !== "finished") {
+    return NextResponse.json({ message: "종료된 게임 상태를 찾을 수 없습니다." }, { status: 409 });
+  }
+
   const nextState = createInitialGameSession();
 
-  const { error: gameError } = await supabase
+  const { data: updatedGame, error: gameError } = await supabase
     .from("room_games")
-    .update({ state_json: nextState, version: 1 })
-    .eq("room_id", room.id);
+    .update({ state_json: nextState, version: roomGame.version + 1 })
+    .eq("room_id", room.id)
+    .eq("version", roomGame.version)
+    .select("version")
+    .maybeSingle();
 
   if (gameError) {
     return NextResponse.json({ message: "리매치 상태 생성에 실패했습니다." }, { status: 500 });
+  }
+
+  if (!updatedGame) {
+    return NextResponse.json({ message: "다른 플레이어의 변경이 먼저 반영되었습니다. 다시 시도해 주세요." }, { status: 409 });
   }
 
   const { error: roomError } = await supabase

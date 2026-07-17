@@ -360,6 +360,10 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
       return;
     }
 
+    setSelectedPieceId(null);
+    setRotation(0);
+    setHoveredBoardCell(null);
+
     setRoomSummary((current) =>
       current
         ? {
