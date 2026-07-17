@@ -3,6 +3,7 @@ import {
   createInitialGameSession,
   forfeitGame,
   placeSelectedPiece,
+  resetGameSession,
   rotateSelectedPiece,
   selectPiece,
 } from "@/domain/katamino/game-state";
@@ -83,5 +84,16 @@ describe("katamino local game state", () => {
     expect(forfeitedState.phase).toBe("finished");
     expect(forfeitedState.finishedReason).toBe("forfeit");
     expect(forfeitedState.winnerSeat).toBe("guest");
+  });
+
+  it("resetGameSession은 초기 상태로 되돌린다", () => {
+    const selectedState = selectPiece(createInitialGameSession(), "block12");
+    const placedResult = placeSelectedPiece(selectedState, 3, 3);
+    const resetState = resetGameSession();
+
+    expect(placedResult.state.usedPieceIds).toContain("block12");
+    expect(resetState.usedPieceIds).toHaveLength(0);
+    expect(resetState.selectedPieceId).toBe(null);
+    expect(resetState.board.flat().every((cell) => cell === null)).toBe(true);
   });
 });

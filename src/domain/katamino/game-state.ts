@@ -80,6 +80,10 @@ export function createInitialGameState(): LocalGameSession {
   return createInitialGameSession();
 }
 
+export function resetGameSession(): LocalGameSession {
+  return createInitialGameSession();
+}
+
 export function selectPiece(state: LocalGameSession, pieceId: PieceId): LocalGameSession {
   if (state.phase !== "playing") {
     return {
