@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function ensureAnonymousSession(client: SupabaseClient | null) {
   if (!client) {
@@ -20,4 +21,26 @@ export async function ensureAnonymousSession(client: SupabaseClient | null) {
   }
 
   return { ok: true, reason: "anonymous-session-created" as const };
+}
+
+export async function getCurrentGuestId() {
+  const client = await getSupabaseServerClient();
+
+  if (!client) {
+    return { ok: false, reason: "supabase-disabled" as const };
+  }
+
+  const {
+    data: { user },
+    error,
+  } = await client.auth.getUser();
+
+  if (error || !user) {
+    return { ok: false, reason: "unauthenticated" as const };
+  }
+
+  return {
+    ok: true,
+    guestId: user.id,
+  };
 }
