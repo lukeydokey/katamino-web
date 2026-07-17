@@ -92,6 +92,7 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
   const selectedPiece = selectedPieceId && gameState ? gameState.pieces[selectedPieceId] : null;
   const isWaitingRoom = roomSummary?.status === "waiting";
   const isPlayingRoom = roomSummary?.status === "playing";
+  const isFinishedRoom = roomSummary?.status === "finished" || gameState?.phase === "finished";
 
   const previewMask = useMemo(() => {
     if (!selectedPiece) {
@@ -170,8 +171,22 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
         : "상대가 수를 두면 이 화면도 곧바로 갱신됩니다.";
     }
 
-    return "같은 상대와 다시 플레이하거나 새 방을 만들어 이어갈 수 있습니다.";
+    return normalizedSeat === "host"
+      ? "같은 상대와 바로 다시 시작할 수 있습니다. 준비가 되면 다시 시작해 보세요."
+      : "호스트가 다시 시작하면 곧 새 판이 열립니다.";
   }, [gameState?.currentTurnSeat, isPlayingRoom, isWaitingRoom, normalizedSeat, roomSummary]);
+
+  const resultLabel = useMemo(() => {
+    if (!isFinishedRoom || !gameState?.winnerSeat) {
+      return null;
+    }
+
+    if (gameState.winnerSeat === normalizedSeat) {
+      return "승리";
+    }
+
+    return "패배";
+  }, [gameState?.winnerSeat, isFinishedRoom, normalizedSeat]);
 
   async function copyRoomCode() {
     try {
@@ -327,6 +342,87 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
     }
   }
 
+  async function forfeitRoom() {
+    setMessage(null);
+
+    const response = await fetch("/api/rooms/forfeit", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ code: roomCode }),
+    });
+
+    const payload = (await response.json()) as { message?: string; state?: LocalGameSession; ok?: boolean };
+
+    if (!response.ok) {
+      setMessage(payload.message ?? "기권 처리에 실패했습니다.");
+      return;
+    }
+
+    setRoomSummary((current) =>
+      current
+        ? {
+            ...current,
+            status: "finished",
+            canStart: false,
+            gameState: payload.state ?? current.gameState,
+          }
+        : current,
+    );
+
+    await roomChannelRef.current?.send({
+      type: "broadcast",
+      event: "room-updated",
+      payload: {
+        roomCode,
+        status: "finished",
+      },
+    });
+  }
+
+  async function requestRematch() {
+    setMessage(null);
+
+    const response = await fetch("/api/rooms/rematch", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ code: roomCode }),
+    });
+
+    const payload = (await response.json()) as { message?: string; state?: LocalGameSession; ok?: boolean };
+
+    if (!response.ok) {
+      setMessage(payload.message ?? "다시 시작에 실패했습니다.");
+      return;
+    }
+
+    setSelectedPieceId(null);
+    setRotation(0);
+    setHoveredBoardCell(null);
+    setRoomSummary((current) =>
+      current
+        ? {
+            ...current,
+            status: "playing",
+            canStart: false,
+            gameState: payload.state ?? current.gameState,
+          }
+        : current,
+    );
+
+    await roomChannelRef.current?.send({
+      type: "broadcast",
+      event: "room-updated",
+      payload: {
+        roomCode,
+        status: "playing",
+      },
+    });
+  }
+
   async function placeMove(x: number, y: number) {
     if (!selectedPieceId) {
       return;
@@ -419,6 +515,13 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
           {roomHint}
         </div>
 
+        {resultLabel ? (
+          <div className="mt-4 rounded-2xl border border-[var(--line)] bg-white px-4 py-4">
+            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">결과</p>
+            <p className="mt-2 text-2xl font-bold text-[var(--accent)]">{resultLabel}</p>
+          </div>
+        ) : null}
+
         <ul className="mt-4 space-y-2 text-sm text-black/70">
           {roomSummary?.players.map((player) => (
             <li key={`${player.guestId}-${player.seat}`} className="rounded-xl border border-[var(--line)] bg-white px-4 py-3">
@@ -429,14 +532,36 @@ export function RoomPageClient({ roomCode, seat }: RoomPageClientProps) {
         </ul>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => void startRoom()}
-            disabled={isStarting || !canStart}
-            className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {canStart ? "게임 시작" : normalizedSeat === "host" ? "상대 대기 중" : "호스트 대기 중"}
-          </button>
+          {isWaitingRoom ? (
+            <button
+              type="button"
+              onClick={() => void startRoom()}
+              disabled={isStarting || !canStart}
+              className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {canStart ? "게임 시작" : normalizedSeat === "host" ? "상대 대기 중" : "호스트 대기 중"}
+            </button>
+          ) : null}
+
+          {isPlayingRoom ? (
+            <button
+              type="button"
+              onClick={() => void forfeitRoom()}
+              className="rounded-2xl border border-[var(--line)] bg-white px-5 py-3 text-sm font-semibold text-black/75"
+            >
+              기권하기
+            </button>
+          ) : null}
+
+          {isFinishedRoom && normalizedSeat === "host" ? (
+            <button
+              type="button"
+              onClick={() => void requestRematch()}
+              className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--accent-foreground)]"
+            >
+              같은 룸에서 다시 시작
+            </button>
+          ) : null}
         </div>
 
         <p className="mt-4 min-h-6 text-sm text-[var(--accent)]">{message ?? ""}</p>
