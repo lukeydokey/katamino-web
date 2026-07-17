@@ -14,5 +14,9 @@ export async function POST() {
 
   const guestId = await ensureGuestSessionId();
 
-  return NextResponse.json({ guestId, ok: true });
+  if (!guestId) {
+    return NextResponse.json({ message: "guest 세션 생성에 실패했습니다." }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
 }
