@@ -52,7 +52,7 @@ describe("room service helpers", () => {
       summarizeRoomState("ABC123", "waiting", [
         { guestId: "g1", seat: "host" },
         { guestId: "g2", seat: "guest" },
-      ]),
+      ], createInitialRoomSnapshot()),
     ).toEqual({
       roomCode: "ABC123",
       status: "waiting",
@@ -61,6 +61,7 @@ describe("room service helpers", () => {
         { guestId: "g2", seat: "guest" },
       ],
       canStart: true,
+      gameState: createInitialRoomSnapshot(),
     });
   });
 });

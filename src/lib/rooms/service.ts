@@ -1,3 +1,4 @@
+import type { LocalGameSession } from "@/domain/katamino/game-state";
 import { createInitialGameSession } from "@/domain/katamino/game-state";
 import type { PlayerSeat, RoomStatus } from "@/domain/katamino/types";
 
@@ -11,6 +12,7 @@ export interface RoomSnapshotSummary {
   status: RoomStatus;
   players: RoomPlayerRecord[];
   canStart: boolean;
+  gameState: LocalGameSession | null;
 }
 
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -56,11 +58,13 @@ export function summarizeRoomState(
   roomCode: string,
   status: RoomStatus,
   players: RoomPlayerRecord[],
+  gameState: LocalGameSession | null,
 ): RoomSnapshotSummary {
   return {
     roomCode,
     status,
     players,
     canStart: canStartRoom(status, players),
+    gameState,
   };
 }
