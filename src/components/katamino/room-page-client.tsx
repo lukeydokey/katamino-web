@@ -222,8 +222,16 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
   }, [gameState?.currentTurnSeat, isPlayingRoom, isWaitingRoom, normalizedSeat, roomSummary]);
 
   const resultLabel = useMemo(() => {
-    if (!isFinishedRoom || !gameState?.winnerSeat) {
+    if (!isFinishedRoom) {
       return null;
+    }
+
+    if (!normalizedSeat) {
+      return viewerRole === "spectator" ? "관전 완료" : "게임 종료";
+    }
+
+    if (!gameState?.winnerSeat) {
+      return "게임 종료";
     }
 
     if (gameState.winnerSeat === normalizedSeat) {
@@ -231,7 +239,64 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
     }
 
     return "패배";
-  }, [gameState?.winnerSeat, isFinishedRoom, normalizedSeat]);
+  }, [gameState?.winnerSeat, isFinishedRoom, normalizedSeat, viewerRole]);
+
+  const finishedReasonLabel = useMemo(() => {
+    switch (gameState?.finishedReason) {
+      case "forfeit":
+        return "기권으로 종료";
+      case "timeout":
+        return "시간 초과로 종료";
+      case "completed":
+        return "정상 종료";
+      default:
+        return null;
+    }
+  }, [gameState?.finishedReason]);
+
+  const turnCountLabel = useMemo(() => {
+    if (!gameState?.turnNumber) {
+      return null;
+    }
+
+    return `${Math.max(0, gameState.turnNumber - 1)}수 진행`;
+  }, [gameState?.turnNumber]);
+
+  const nextStepLabel = useMemo(() => {
+    if (!isFinishedRoom) {
+      return null;
+    }
+
+    if (viewerRole === "spectator") {
+      return "다음 판이 열리면 같은 방에서 계속 관전할 수 있습니다.";
+    }
+
+    if (!normalizedSeat) {
+      return "방 상태를 지켜보며 다음 진행을 기다려 주세요.";
+    }
+
+    if (normalizedSeat === "host") {
+      return "준비가 되면 같은 룸에서 다시 시작해 다음 판을 바로 열 수 있습니다.";
+    }
+
+    return "호스트가 다시 시작하면 같은 방에서 다음 판이 자동으로 열립니다.";
+  }, [isFinishedRoom, normalizedSeat, viewerRole]);
+
+  const messageToneClass = useMemo(() => {
+    if (!message) {
+      return "border-[var(--line)] bg-white text-black/70";
+    }
+
+    if (message.includes("실패") || message.includes("불가")) {
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    }
+
+    if (message.includes("완료") || message.includes("복사") || message.includes("시작")) {
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    }
+
+    return "border-[var(--line)] bg-white text-black/70";
+  }, [message]);
 
   const remainingSeconds = (() => {
     if (!roomSummary?.deadlineAt) {
@@ -777,6 +842,9 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
           <div className="mt-4 rounded-2xl border border-[var(--line)] bg-white px-4 py-4">
             <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">결과</p>
             <p className="mt-2 text-2xl font-bold text-[var(--accent)]">{resultLabel}</p>
+            {finishedReasonLabel ? <p className="mt-2 text-sm text-black/65">{finishedReasonLabel}</p> : null}
+            {turnCountLabel ? <p className="mt-1 text-sm text-black/55">{turnCountLabel}</p> : null}
+            {nextStepLabel ? <p className="mt-3 text-sm leading-6 text-black/70">{nextStepLabel}</p> : null}
           </div>
         ) : null}
 
@@ -928,9 +996,9 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
 
             <section className={getSidebarSectionClass("status")}>
               <h2 className="text-xl font-semibold">현재 상태</h2>
-              <p className="min-h-12 text-sm text-black/60">
+              <div className={`rounded-2xl border px-4 py-3 text-sm leading-6 ${messageToneClass}`}>
                 {message ?? (viewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : gameState ? canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다." : roomHint)}
-              </p>
+              </div>
               {gameState ? (
                 <>
                   <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3">
