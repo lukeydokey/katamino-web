@@ -48,6 +48,7 @@ interface ActivityItem {
 }
 
 type RealtimeStatus = "connecting" | "live" | "reconnecting";
+type HeaderActionFeedback = "copied" | "shared" | "link-copied" | "copy-failed" | "share-failed" | null;
 
 function PieceShape({
   mask,
@@ -136,6 +137,8 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const [seatOverride, setSeatOverride] = useState<string | undefined>(undefined);
   const [isResolvingEntry, setIsResolvingEntry] = useState(false);
   const [isSwitchingRole, setIsSwitchingRole] = useState(false);
+  const [headerActionFeedback, setHeaderActionFeedback] = useState<HeaderActionFeedback>(null);
+  const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
   const [selectedPieceId, setSelectedPieceId] = useState<PieceId | null>(null);
   const [rotation, setRotation] = useState(0);
   const [hoveredBoardCell, setHoveredBoardCell] = useState<{ x: number; y: number } | null>(null);
@@ -154,6 +157,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const shouldStickChatToBottomRef = useRef(true);
   const realtimeStatusRef = useRef<RealtimeStatus>("connecting");
   const reconnectTimerRef = useRef<number | null>(null);
+  const headerActionFeedbackTimerRef = useRef<number | null>(null);
 
   const joinedPlayer = guestId ? roomSummary?.players.find((player) => player.guestId === guestId) : undefined;
   const joinedSpectator = guestId ? roomSummary?.spectators.find((spectator) => spectator.guestId === guestId) : undefined;
@@ -215,6 +219,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const canChat = effectiveViewerRole === "player" || effectiveViewerRole === "spectator";
   const showTrayPanel = Boolean(gameState);
   const resolvedSidebarPanel = !showTrayPanel && activeSidebarPanel === "tray" ? "status" : activeSidebarPanel;
+  const unreadMessageCount = isChatDrawerOpen ? 0 : Math.max(0, activityItems.length + messages.length);
 
   const seatLabel = normalizedSeat === "host" ? "HOST" : normalizedSeat === "guest" ? "GUEST" : effectiveViewerRole === "spectator" ? "SPECTATOR" : "미확인";
 
@@ -336,6 +341,19 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const realtimeStatusLabel =
     realtimeStatus === "live" ? "실시간 연결됨" : realtimeStatus === "reconnecting" ? "재연결 중" : "연결 중";
 
+  const headerActionFeedbackLabel =
+    headerActionFeedback === "copied"
+      ? "룸 코드를 복사했습니다."
+      : headerActionFeedback === "shared"
+        ? "링크 공유 창을 열었습니다."
+        : headerActionFeedback === "link-copied"
+          ? "링크를 복사했습니다."
+          : headerActionFeedback === "copy-failed"
+            ? "룸 코드 복사에 실패했습니다."
+            : headerActionFeedback === "share-failed"
+              ? "링크 공유에 실패했습니다."
+              : null;
+
   const remainingSeconds = (() => {
     if (!roomSummary?.deadlineAt) {
       return null;
@@ -382,12 +400,60 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (headerActionFeedbackTimerRef.current !== null) {
+        window.clearTimeout(headerActionFeedbackTimerRef.current);
+      }
+    };
+  }, []);
+
+  function setTemporaryHeaderFeedback(nextFeedback: Exclude<HeaderActionFeedback, null>) {
+    setHeaderActionFeedback(nextFeedback);
+
+    if (headerActionFeedbackTimerRef.current !== null) {
+      window.clearTimeout(headerActionFeedbackTimerRef.current);
+    }
+
+    headerActionFeedbackTimerRef.current = window.setTimeout(() => {
+      setHeaderActionFeedback(null);
+      headerActionFeedbackTimerRef.current = null;
+    }, 1800);
+  }
+
   async function copyRoomCode() {
     try {
       await navigator.clipboard.writeText(roomCode);
-      setMessage("룸 코드를 복사했습니다.");
+      setTemporaryHeaderFeedback("copied");
     } catch {
-      setMessage("룸 코드 복사에 실패했습니다.");
+      setTemporaryHeaderFeedback("copy-failed");
+    }
+  }
+
+  async function shareRoomLink() {
+    const roomLink = `${window.location.origin}/room/${roomCode}`;
+
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({
+          title: `Katamino 룸 ${roomCode}`,
+          text: `Katamino 룸 ${roomCode}에 참가해 보세요.`,
+          url: roomLink,
+        });
+        setTemporaryHeaderFeedback("shared");
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(roomLink);
+      setTemporaryHeaderFeedback("link-copied");
+    } catch {
+      setTemporaryHeaderFeedback("share-failed");
     }
   }
 
@@ -1027,13 +1093,27 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
             <p className="text-sm leading-6 text-black/65">{roomHeadline}</p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => void copyRoomCode()}
-            className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm font-medium text-black/75"
-          >
-            룸 코드 복사
-          </button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => void copyRoomCode()}
+                className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm font-medium text-black/75"
+              >
+                룸 코드 복사
+              </button>
+              <button
+                type="button"
+                onClick={() => void shareRoomLink()}
+                className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm font-medium text-black/75"
+              >
+                링크 공유
+              </button>
+            </div>
+            {headerActionFeedbackLabel ? (
+              <p className="text-xs text-[var(--accent)]">{headerActionFeedbackLabel}</p>
+            ) : null}
+          </div>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-2 text-sm text-black/70">
@@ -1154,7 +1234,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
           )}
 
           <aside className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6 lg:sticky lg:top-6 lg:col-start-2 lg:self-start">
-            <div className="flex flex-wrap gap-2 lg:hidden">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setActiveSidebarPanel("status")}
@@ -1183,15 +1263,17 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
               ) : null}
               <button
                 type="button"
-                onClick={() => setActiveSidebarPanel("chat")}
-                aria-pressed={resolvedSidebarPanel === "chat"}
-                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                  resolvedSidebarPanel === "chat"
-                    ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-foreground)]"
-                    : "border-[var(--line)] bg-white text-black/70"
-                }`}
+                onClick={() => setIsChatDrawerOpen(true)}
+                className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm font-medium text-black/70 transition hover:border-[var(--accent)] hover:text-black"
               >
-                채팅
+                <span className="inline-flex items-center gap-2">
+                  채팅
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--surface-strong)] px-2 py-0.5 text-xs text-black/60">
+                    <PeopleIcon />
+                    <span>{participantItems.length}</span>
+                    {unreadMessageCount > 0 ? <span>· {unreadMessageCount}</span> : null}
+                  </span>
+                </span>
               </button>
             </div>
 
@@ -1224,17 +1306,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                     </p>
                   </div>
                 </>
-              ) : (
-                <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-black/70">
-                  <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">방 상태</p>
-                  <p className="mt-2 text-base font-semibold">{roomStatusLabel}</p>
-                  <p className="mt-2 text-black/65">
-                    {normalizedSeat === "host"
-                      ? "상대가 참가하면 여기서 바로 게임을 시작할 수 있습니다."
-                      : "호스트가 게임을 시작하면 보드와 트레이가 바로 열립니다."}
-                  </p>
-                </div>
-              )}
+              ) : null}
               <div className="flex flex-wrap gap-3">
                 {isWaitingRoom ? (
                   <button
@@ -1336,94 +1408,114 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
               </section>
             ) : null}
 
-            <section className={getSidebarSectionClass("chat")}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-semibold">실시간 채팅</h3>
-                  <p className="text-sm text-black/60">Enter로 전송하고, Shift+Enter로 줄바꿈할 수 있습니다.</p>
-                  <p className="mt-1 text-xs text-black/45">{realtimeStatusLabel}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowParticipants((current) => !current)}
-                  className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-xs font-semibold text-black/70"
-                >
-                  <span className="inline-flex items-center gap-2">
-                    <PeopleIcon />
-                    <span>{participantItems.length}</span>
-                  </span>
-                </button>
-              </div>
-
-              {showParticipants ? (
-                <div className="space-y-2 rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75">
-                  {participantItems.map((participant) => (
-                    <div key={participant.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <RoleBadge shortLabel={participant.shortLabel} label={participant.label} />
-                        <span className="text-xs text-black/50">{participant.detail}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              <div
-                ref={chatScrollRef}
-                onScroll={(event) => {
-                  const element = event.currentTarget;
-                  shouldStickChatToBottomRef.current =
-                    element.scrollHeight - element.scrollTop - element.clientHeight < 40;
-                }}
-                className="max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75 lg:max-h-[40vh]"
-              >
-                {activityItems.length > 0 ? (
-                  <div className="rounded-xl bg-[var(--surface)] px-3 py-3 text-xs text-black/55">
-                    <div className="space-y-1">
-                      {activityItems.map((item) => (
-                        <p key={item.id}>• {item.body}</p>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {messages.length > 0 ? (
-                  messages.map((chat) => (
-                    <div key={chat.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-xs font-semibold text-black/60">{formatSenderRole(chat.senderRole)}</p>
-                        <p className="text-xs text-black/45">{new Date(chat.created_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>
-                      </div>
-                      <p className="mt-1 whitespace-pre-wrap break-words">{chat.body}</p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-black/50">아직 채팅이 없습니다.</p>
-                )}
-              </div>
-
-              <div className="flex gap-2">
-                <textarea
-                  value={chatInput}
-                  onChange={(event) => setChatInput(event.target.value)}
-                  onKeyDown={(event) => void handleChatKeyDown(event)}
-                  placeholder={canChat ? "메시지를 입력하세요" : "채팅 불가"}
-                  disabled={!canChat}
-                  rows={3}
-                  className="min-h-24 flex-1 resize-none rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
-                />
-                <button
-                  type="button"
-                  onClick={() => void sendMessage()}
-                  disabled={!canChat || !chatInput.trim()}
-                  className="self-end rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  전송
-                </button>
-              </div>
-            </section>
           </aside>
         </section>
       ) : null}
+
+      <div
+        className={`fixed inset-0 z-40 bg-black/20 transition ${isChatDrawerOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"}`}
+        onClick={() => setIsChatDrawerOpen(false)}
+      />
+
+      <aside
+        className={`fixed right-4 top-4 bottom-4 z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-2xl transition-transform duration-200 sm:p-6 lg:w-[360px] ${
+          isChatDrawerOpen ? "translate-x-0" : "translate-x-[calc(100%+2rem)]"
+        }`}
+        aria-hidden={!isChatDrawerOpen}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">실시간 채팅</h3>
+            <p className="text-sm text-black/60">Enter로 전송하고, Shift+Enter로 줄바꿈할 수 있습니다.</p>
+            <p className="mt-1 text-xs text-black/45">{realtimeStatusLabel}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowParticipants((current) => !current)}
+              className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-xs font-semibold text-black/70"
+            >
+              <span className="inline-flex items-center gap-2">
+                <PeopleIcon />
+                <span>{participantItems.length}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsChatDrawerOpen(false)}
+              className="rounded-full border border-[var(--line)] bg-white px-3 py-2 text-xs font-semibold text-black/70"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+
+        {showParticipants ? (
+          <div className="mt-4 space-y-2 rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75">
+            {participantItems.map((participant) => (
+              <div key={participant.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <RoleBadge shortLabel={participant.shortLabel} label={participant.label} />
+                  <span className="text-xs text-black/50">{participant.detail}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div
+          ref={chatScrollRef}
+          onScroll={(event) => {
+            const element = event.currentTarget;
+            shouldStickChatToBottomRef.current =
+              element.scrollHeight - element.scrollTop - element.clientHeight < 40;
+          }}
+          className="mt-4 flex-1 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75"
+        >
+          {activityItems.length > 0 ? (
+            <div className="rounded-xl bg-[var(--surface)] px-3 py-3 text-xs text-black/55">
+              <div className="space-y-1">
+                {activityItems.map((item) => (
+                  <p key={item.id}>• {item.body}</p>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {messages.length > 0 ? (
+            messages.map((chat) => (
+              <div key={chat.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-black/60">{formatSenderRole(chat.senderRole)}</p>
+                  <p className="text-xs text-black/45">{new Date(chat.created_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>
+                </div>
+                <p className="mt-1 whitespace-pre-wrap break-words">{chat.body}</p>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-black/50">아직 채팅이 없습니다.</p>
+          )}
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <textarea
+            value={chatInput}
+            onChange={(event) => setChatInput(event.target.value)}
+            onKeyDown={(event) => void handleChatKeyDown(event)}
+            placeholder={canChat ? "메시지를 입력하세요" : "채팅 불가"}
+            disabled={!canChat}
+            rows={3}
+            className="min-h-24 flex-1 resize-none rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          <button
+            type="button"
+            onClick={() => void sendMessage()}
+            disabled={!canChat || !chatInput.trim()}
+            className="self-end rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            전송
+          </button>
+        </div>
+      </aside>
     </main>
   );
 }
