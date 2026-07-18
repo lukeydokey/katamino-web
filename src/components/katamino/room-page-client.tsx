@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { canPlacePiece } from "@/domain/katamino/board";
 import { getPieceColor, rotateMaskClockwise } from "@/domain/katamino/pieces";
@@ -17,6 +18,7 @@ interface RoomSummary {
   roomCode: string;
   status: RoomStatus;
   players: RoomPlayerRecord[];
+  spectators: Array<{ guestId: string }>;
   canStart: boolean;
   gameState: LocalGameSession | null;
   turnTimeSeconds: number;
@@ -28,6 +30,7 @@ interface RoomPageClientProps {
   roomCode: string;
   seat: string | undefined;
   viewerRole: "player" | "spectator" | "viewer";
+  guestId?: string;
 }
 
 interface RoomMessage {
@@ -39,6 +42,13 @@ interface RoomMessage {
 }
 
 type SidebarPanel = "status" | "tray" | "chat";
+type ChatSidebarMode = "messages" | "participants";
+
+interface ActivityItem {
+  id: string;
+  body: string;
+  createdAt: string;
+}
 
 function PieceShape({
   mask,
@@ -105,18 +115,25 @@ function getPreviewCells(mask: number[][], x: number, y: number) {
   return previewCells;
 }
 
-export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientProps) {
+export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPageClientProps) {
+  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [messages, setMessages] = useState<RoomMessage[]>([]);
+  const [activityItems, setActivityItems] = useState<ActivityItem[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
+  const [roleOverride, setRoleOverride] = useState<RoomPageClientProps["viewerRole"] | null>(null);
+  const [seatOverride, setSeatOverride] = useState<string | undefined>(undefined);
+  const [isResolvingEntry, setIsResolvingEntry] = useState(false);
+  const [isSwitchingRole, setIsSwitchingRole] = useState(false);
   const [selectedPieceId, setSelectedPieceId] = useState<PieceId | null>(null);
   const [rotation, setRotation] = useState(0);
   const [hoveredBoardCell, setHoveredBoardCell] = useState<{ x: number; y: number } | null>(null);
   const [pendingPlacementCell, setPendingPlacementCell] = useState<{ x: number; y: number } | null>(null);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [activeSidebarPanel, setActiveSidebarPanel] = useState<SidebarPanel>("status");
+  const [chatSidebarMode, setChatSidebarMode] = useState<ChatSidebarMode>("messages");
   const [nowTick, setNowTick] = useState(() => Date.now());
   const selectedPieceIdRef = useRef<PieceId | null>(null);
   const roomSummaryRef = useRef<RoomSummary | null>(null);
@@ -125,7 +142,9 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const shouldStickChatToBottomRef = useRef(true);
 
-  const normalizedSeat = seat === "host" || seat === "guest" ? seat : undefined;
+  const effectiveViewerRole = roleOverride ?? viewerRole;
+  const effectiveSeat = seatOverride ?? seat;
+  const normalizedSeat = effectiveSeat === "host" || effectiveSeat === "guest" ? effectiveSeat : undefined;
   const playerCount = roomSummary?.players.length ?? 0;
   const canStart = normalizedSeat === "host" && roomSummary?.canStart;
   const gameState = roomSummary?.gameState ?? null;
@@ -177,11 +196,11 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
 
   const canPlayTurn = gameState && normalizedSeat === gameState.currentTurnSeat;
   const spectatorCount = roomSummary?.spectatorCount ?? 0;
-  const canChat = viewerRole === "player" || viewerRole === "spectator";
+  const canChat = effectiveViewerRole === "player" || effectiveViewerRole === "spectator";
   const showTrayPanel = Boolean(gameState);
   const resolvedSidebarPanel = !showTrayPanel && activeSidebarPanel === "tray" ? "status" : activeSidebarPanel;
 
-  const seatLabel = normalizedSeat === "host" ? "HOST" : normalizedSeat === "guest" ? "GUEST" : "미확인";
+  const seatLabel = normalizedSeat === "host" ? "HOST" : normalizedSeat === "guest" ? "GUEST" : effectiveViewerRole === "spectator" ? "SPECTATOR" : "미확인";
 
   const roomHeadline = useMemo(() => {
     if (!roomSummary) {
@@ -227,7 +246,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
     }
 
     if (!normalizedSeat) {
-      return viewerRole === "spectator" ? "관전 완료" : "게임 종료";
+      return effectiveViewerRole === "spectator" ? "관전 완료" : "게임 종료";
     }
 
     if (!gameState?.winnerSeat) {
@@ -239,7 +258,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
     }
 
     return "패배";
-  }, [gameState?.winnerSeat, isFinishedRoom, normalizedSeat, viewerRole]);
+  }, [effectiveViewerRole, gameState?.winnerSeat, isFinishedRoom, normalizedSeat]);
 
   const finishedReasonLabel = useMemo(() => {
     switch (gameState?.finishedReason) {
@@ -267,7 +286,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
       return null;
     }
 
-    if (viewerRole === "spectator") {
+    if (effectiveViewerRole === "spectator") {
       return "다음 판이 열리면 같은 방에서 계속 관전할 수 있습니다.";
     }
 
@@ -280,7 +299,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
     }
 
     return "호스트가 다시 시작하면 같은 방에서 다음 판이 자동으로 열립니다.";
-  }, [isFinishedRoom, normalizedSeat, viewerRole]);
+  }, [effectiveViewerRole, isFinishedRoom, normalizedSeat]);
 
   const messageToneClass = useMemo(() => {
     if (!message) {
@@ -441,6 +460,44 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
     let active = true;
     const client = getSupabaseBrowserClient();
 
+    function appendActivityItem(body: string) {
+      setActivityItems((current) => [
+        ...current.slice(-7),
+        {
+          id: `${Date.now()}-${body}`,
+          body,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    }
+
+    function recordRoomActivity(previousSummary: RoomSummary | null, nextSummary: RoomSummary) {
+      if (!previousSummary) {
+        return;
+      }
+
+      const previousSeats = new Set(previousSummary.players.map((player) => player.seat));
+      const nextSeats = new Set(nextSummary.players.map((player) => player.seat));
+
+      if (!previousSeats.has("guest") && nextSeats.has("guest")) {
+        appendActivityItem("GUEST가 입장했습니다.");
+      }
+
+      if (previousSeats.has("guest") && !nextSeats.has("guest")) {
+        appendActivityItem("GUEST가 자리를 비웠습니다.");
+      }
+
+      const spectatorDelta = nextSummary.spectatorCount - previousSummary.spectatorCount;
+
+      if (spectatorDelta > 0) {
+        appendActivityItem(`관전자 ${spectatorDelta}명이 입장했습니다.`);
+      }
+
+      if (spectatorDelta < 0) {
+        appendActivityItem(`관전자 ${Math.abs(spectatorDelta)}명이 퇴장했습니다.`);
+      }
+    }
+
     async function fetchRoomSummary() {
       const response = await fetch(`/api/rooms/${roomCode}`, {
         method: "GET",
@@ -454,6 +511,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
       const payload = (await response.json()) as RoomSummary;
       const previousSummary = roomSummaryRef.current;
       setRoomSummary(payload);
+      recordRoomActivity(previousSummary, payload);
 
       const currentSelectedPieceId = selectedPieceIdRef.current;
       const turnNumberReset =
@@ -516,6 +574,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
         await channel.track({
           roomCode,
           seat: normalizedSeat ?? "observer",
+          role: effectiveViewerRole,
           onlineAt: new Date().toISOString(),
         });
       }
@@ -527,7 +586,55 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
       channel?.unsubscribe();
       roomChannelRef.current = null;
     };
-  }, [normalizedSeat, roomCode]);
+  }, [effectiveViewerRole, normalizedSeat, roomCode]);
+
+  useEffect(() => {
+    if (effectiveViewerRole !== "viewer" || isResolvingEntry) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function autoEnterRoom() {
+      setIsResolvingEntry(true);
+
+      try {
+        const response = await fetch("/api/rooms/join", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ code: roomCode }),
+        });
+
+        const payload = (await response.json()) as { message?: string; role?: "player" | "spectator"; seat?: string };
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok || !payload.role) {
+          setMessage(payload.message ?? "방 입장에 실패했습니다.");
+          return;
+        }
+
+        setRoleOverride(payload.role);
+        setSeatOverride(payload.seat);
+        setMessage(payload.role === "player" ? "guest 자리로 참가했습니다." : "관전으로 입장했습니다.");
+        router.refresh();
+      } finally {
+        if (!cancelled) {
+          setIsResolvingEntry(false);
+        }
+      }
+    }
+
+    void autoEnterRoom();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveViewerRole, isResolvingEntry, roomCode, router]);
 
   async function startRoom() {
     setIsStarting(true);
@@ -650,6 +757,47 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
     });
   }
 
+  async function switchRoomRole(targetRole: "player" | "spectator") {
+    setIsSwitchingRole(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/rooms/${roomCode}/role`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ targetRole }),
+      });
+
+      const payload = (await response.json()) as {
+        message?: string;
+        role?: "player" | "spectator";
+        seat?: string;
+      };
+
+      if (!response.ok || !payload.role) {
+        setMessage(payload.message ?? "역할 전환에 실패했습니다.");
+        return;
+      }
+
+      setRoleOverride(payload.role);
+      setSeatOverride(payload.seat);
+      setMessage(payload.role === "player" ? "guest 자리로 전환했습니다." : "관전 상태로 전환했습니다.");
+      await roomChannelRef.current?.send({
+        type: "broadcast",
+        event: "room-updated",
+        payload: {
+          roomCode,
+          status: roomSummary?.status ?? "waiting",
+        },
+      });
+      router.refresh();
+    } finally {
+      setIsSwitchingRole(false);
+    }
+  }
+
   async function placeMove(x: number, y: number) {
     if (!selectedPieceId) {
       return;
@@ -756,7 +904,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
   }
 
   async function handleBoardCellClick(x: number, y: number) {
-    if (viewerRole !== "player" || !canPlayTurn || !selectedPieceId) {
+    if (effectiveViewerRole !== "player" || !canPlayTurn || !selectedPieceId) {
       return;
     }
 
@@ -780,6 +928,26 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
         return "SPECTATOR · S";
     }
   }
+
+  const participantItems = useMemo(() => {
+    const playerItems = roomSummary?.players.map((player) => ({
+      id: `player-${player.guestId}`,
+      label: player.seat === "host" ? "HOST" : "GUEST",
+      shortLabel: player.seat === "host" ? "H" : "G",
+      isYou: player.guestId === guestId,
+      detail: player.guestId === guestId ? "나" : "참가 중",
+    })) ?? [];
+
+    const spectatorItems = roomSummary?.spectators.map((spectator, index) => ({
+      id: `spectator-${spectator.guestId}`,
+      label: `SPECTATOR ${index + 1}`,
+      shortLabel: "S",
+      isYou: spectator.guestId === guestId,
+      detail: spectator.guestId === guestId ? "나" : "관전 중",
+    })) ?? [];
+
+    return [...playerItems, ...spectatorItems];
+  }, [guestId, roomSummary?.players, roomSummary?.spectators]);
 
   function getSidebarSectionClass(panel: SidebarPanel) {
     const isActive = resolvedSidebarPanel === panel;
@@ -848,28 +1016,6 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
           </div>
         ) : null}
 
-        <ul className="mt-4 space-y-2 text-sm text-black/70">
-          {roomSummary?.players.map((player) => (
-            <li key={`${player.guestId}-${player.seat}`} className="rounded-xl border border-[var(--line)] bg-white px-4 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <RoleBadge
-                  shortLabel={player.seat === "host" ? "H" : "G"}
-                  label={player.seat === "host" ? "HOST" : "GUEST"}
-                />
-                <span className="text-sm text-black/60">입장 완료</span>
-              </div>
-            </li>
-          ))}
-          {viewerRole === "spectator" ? (
-            <li className="rounded-xl border border-[var(--line)] bg-white px-4 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <RoleBadge shortLabel="S" label="SPECTATOR" />
-                <span className="text-sm text-black/60">관전 중</span>
-              </div>
-            </li>
-          ) : null}
-        </ul>
-
       </section>
 
       {roomSummary ? (
@@ -883,7 +1029,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
                 <div>
                   <h2 className="text-xl font-semibold">공유 게임 보드</h2>
                   <p className="text-sm text-black/60">
-                    {viewerRole === "spectator"
+                    {effectiveViewerRole === "spectator"
                       ? "관전 중입니다. 보드 상태와 채팅을 실시간으로 확인할 수 있습니다."
                       : canPlayTurn
                         ? "지금은 내 차례입니다. 블록을 선택하고 놓을 위치를 정해 보세요."
@@ -897,7 +1043,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
                     setRotation((current) => (current + 1) % 4);
                     setPendingPlacementCell(null);
                   }}
-                  disabled={viewerRole !== "player" || !canPlayTurn || !selectedPieceId}
+                  disabled={effectiveViewerRole !== "player" || !canPlayTurn || !selectedPieceId}
                   className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   선택 블록 회전
@@ -919,7 +1065,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
                         onFocus={() => setHoveredBoardCell({ x, y })}
                         onMouseLeave={() => !isCoarsePointer && setHoveredBoardCell(null)}
                         onClick={() => void handleBoardCellClick(x, y)}
-                        disabled={viewerRole !== "player" || !canPlayTurn || !selectedPieceId}
+                        disabled={effectiveViewerRole !== "player" || !canPlayTurn || !selectedPieceId}
                         className={`flex items-center justify-center rounded-lg border text-xs font-medium transition ${
                           isFilled && cell
                             ? `${getPieceColor(cell).border} ${getPieceColor(cell).soft} ${getPieceColor(cell).text}`
@@ -997,7 +1143,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
             <section className={getSidebarSectionClass("status")}>
               <h2 className="text-xl font-semibold">현재 상태</h2>
               <div className={`rounded-2xl border px-4 py-3 text-sm leading-6 ${messageToneClass}`}>
-                {message ?? (viewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : gameState ? canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다." : roomHint)}
+                {message ?? (effectiveViewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : gameState ? canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다." : roomHint)}
               </div>
               {gameState ? (
                 <>
@@ -1046,7 +1192,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
                   </button>
                 ) : null}
 
-                {isPlayingRoom && viewerRole === "player" ? (
+                {isPlayingRoom && effectiveViewerRole === "player" ? (
                   <button
                     type="button"
                     onClick={() => void forfeitRoom()}
@@ -1065,6 +1211,28 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
                     같은 룸에서 다시 시작
                   </button>
                 ) : null}
+
+                {!isPlayingRoom && normalizedSeat === "guest" ? (
+                  <button
+                    type="button"
+                    onClick={() => void switchRoomRole("spectator")}
+                    disabled={isSwitchingRole}
+                    className="rounded-2xl border border-[var(--line)] bg-white px-5 py-3 text-sm font-semibold text-black/75 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    관전으로 전환
+                  </button>
+                ) : null}
+
+                {!isPlayingRoom && effectiveViewerRole === "spectator" ? (
+                  <button
+                    type="button"
+                    onClick={() => void switchRoomRole("player")}
+                    disabled={isSwitchingRole}
+                    className="rounded-2xl border border-[var(--line)] bg-white px-5 py-3 text-sm font-semibold text-black/75 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    guest 자리 참가
+                  </button>
+                ) : null}
               </div>
             </section>
 
@@ -1080,7 +1248,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
                       <button
                         key={piece.id}
                         type="button"
-                        disabled={viewerRole !== "player" || isUsed || !canPlayTurn}
+                        disabled={effectiveViewerRole !== "player" || isUsed || !canPlayTurn}
                         onClick={() => {
                           setSelectedPieceId((current) => (current === piece.id ? null : piece.id));
                           setRotation(0);
@@ -1114,54 +1282,100 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
             ) : null}
 
             <section className={getSidebarSectionClass("chat")}>
-              <div>
-                <h3 className="text-lg font-semibold">실시간 채팅</h3>
-                <p className="text-sm text-black/60">Enter로 전송하고, Shift+Enter로 줄바꿈할 수 있습니다.</p>
-              </div>
-
-              <div
-                ref={chatScrollRef}
-                onScroll={(event) => {
-                  const element = event.currentTarget;
-                  shouldStickChatToBottomRef.current =
-                    element.scrollHeight - element.scrollTop - element.clientHeight < 40;
-                }}
-                className="max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75 lg:max-h-[40vh]"
-              >
-                {messages.length > 0 ? (
-                  messages.map((chat) => (
-                    <div key={chat.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-xs font-semibold text-black/60">{formatSenderRole(chat.senderRole)}</p>
-                        <p className="text-xs text-black/45">{new Date(chat.created_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>
-                      </div>
-                      <p className="mt-1 whitespace-pre-wrap break-words">{chat.body}</p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-black/50">아직 채팅이 없습니다.</p>
-                )}
-              </div>
-
-              <div className="flex gap-2">
-                <textarea
-                  value={chatInput}
-                  onChange={(event) => setChatInput(event.target.value)}
-                  onKeyDown={(event) => void handleChatKeyDown(event)}
-                  placeholder={canChat ? "메시지를 입력하세요" : "채팅 불가"}
-                  disabled={!canChat}
-                  rows={3}
-                  className="min-h-24 flex-1 resize-none rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
-                />
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold">실시간 채팅</h3>
+                  <p className="text-sm text-black/60">Enter로 전송하고, Shift+Enter로 줄바꿈할 수 있습니다.</p>
+                </div>
                 <button
                   type="button"
-                  onClick={() => void sendMessage()}
-                  disabled={!canChat || !chatInput.trim()}
-                  className="self-end rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => setChatSidebarMode((current) => (current === "messages" ? "participants" : "messages"))}
+                  className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-xs font-semibold text-black/70"
                 >
-                  전송
+                  {chatSidebarMode === "messages" ? `참여자 ${participantItems.length}` : "대화 보기"}
                 </button>
               </div>
+
+              {chatSidebarMode === "participants" ? (
+                <div className="space-y-3 rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75">
+                  <div className="space-y-2">
+                    {participantItems.map((participant) => (
+                      <div key={participant.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <RoleBadge shortLabel={participant.shortLabel} label={participant.label} />
+                          <span className="text-xs text-black/50">{participant.detail}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface)] px-3 py-3">
+                    <p className="text-xs font-semibold tracking-[0.12em] text-black/45 uppercase">최근 활동</p>
+                    <div className="mt-2 space-y-2 text-xs text-black/60">
+                      {activityItems.length > 0 ? (
+                        activityItems.map((item) => (
+                          <p key={item.id}>• {item.body}</p>
+                        ))
+                      ) : (
+                        <p>아직 기록된 입장/퇴장 활동이 없습니다.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div
+                    ref={chatScrollRef}
+                    onScroll={(event) => {
+                      const element = event.currentTarget;
+                      shouldStickChatToBottomRef.current =
+                        element.scrollHeight - element.scrollTop - element.clientHeight < 40;
+                    }}
+                    className="max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75 lg:max-h-[40vh]"
+                  >
+                    {activityItems.length > 0 ? (
+                      <div className="space-y-2 rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface)] px-3 py-3 text-xs text-black/55">
+                        {activityItems.map((item) => (
+                          <p key={item.id}>• {item.body}</p>
+                        ))}
+                      </div>
+                    ) : null}
+                    {messages.length > 0 ? (
+                      messages.map((chat) => (
+                        <div key={chat.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs font-semibold text-black/60">{formatSenderRole(chat.senderRole)}</p>
+                            <p className="text-xs text-black/45">{new Date(chat.created_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>
+                          </div>
+                          <p className="mt-1 whitespace-pre-wrap break-words">{chat.body}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-black/50">아직 채팅이 없습니다.</p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <textarea
+                      value={chatInput}
+                      onChange={(event) => setChatInput(event.target.value)}
+                      onKeyDown={(event) => void handleChatKeyDown(event)}
+                      placeholder={canChat ? "메시지를 입력하세요" : "채팅 불가"}
+                      disabled={!canChat}
+                      rows={3}
+                      className="min-h-24 flex-1 resize-none rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void sendMessage()}
+                      disabled={!canChat || !chatInput.trim()}
+                      className="self-end rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      전송
+                    </button>
+                  </div>
+                </>
+              )}
             </section>
           </aside>
         </section>
