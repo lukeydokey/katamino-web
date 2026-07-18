@@ -1,6 +1,4 @@
 "use client";
-
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { canPlacePiece } from "@/domain/katamino/board";
 import { getPieceColor, rotateMaskClockwise } from "@/domain/katamino/pieces";
@@ -116,7 +114,6 @@ function getPreviewCells(mask: number[][], x: number, y: number) {
 }
 
 export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPageClientProps) {
-  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [messages, setMessages] = useState<RoomMessage[]>([]);
@@ -621,7 +618,6 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
         setRoleOverride(payload.role);
         setSeatOverride(payload.seat);
         setMessage(payload.role === "player" ? "guest 자리로 참가했습니다." : "관전으로 입장했습니다.");
-        router.refresh();
       } finally {
         if (!cancelled) {
           setIsResolvingEntry(false);
@@ -634,7 +630,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     return () => {
       cancelled = true;
     };
-  }, [effectiveViewerRole, isResolvingEntry, roomCode, router]);
+  }, [effectiveViewerRole, isResolvingEntry, roomCode]);
 
   async function startRoom() {
     setIsStarting(true);
@@ -792,7 +788,6 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
           status: roomSummary?.status ?? "waiting",
         },
       });
-      router.refresh();
     } finally {
       setIsSwitchingRole(false);
     }
