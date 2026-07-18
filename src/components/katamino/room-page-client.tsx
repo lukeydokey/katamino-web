@@ -30,6 +30,14 @@ interface RoomPageClientProps {
   viewerRole: "player" | "spectator" | "viewer";
 }
 
+interface RoomMessage {
+  id: string;
+  guest_id: string;
+  body: string;
+  created_at: string;
+  senderRole: "host" | "guest" | "spectator";
+}
+
 function PieceShape({
   mask,
   filledClassName,
@@ -81,7 +89,7 @@ function getPreviewCells(mask: number[][], x: number, y: number) {
 export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
-  const [messages, setMessages] = useState<Array<{ id: string; guest_id: string; body: string; created_at: string }>>([]);
+  const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
   const [selectedPieceId, setSelectedPieceId] = useState<PieceId | null>(null);
@@ -205,6 +213,15 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
     return Math.max(0, Math.ceil((new Date(roomSummary.deadlineAt).getTime() - nowTick) / 1000));
   })();
 
+  const timerUrgencyClass =
+    remainingSeconds === null
+      ? "text-black/70"
+      : remainingSeconds <= 5
+        ? "text-rose-700"
+        : remainingSeconds <= 10
+          ? "text-amber-700"
+          : "text-emerald-700";
+
   useEffect(() => {
     if (!roomSummary?.deadlineAt) {
       return;
@@ -245,9 +262,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
         return;
       }
 
-      const payload = (await response.json()) as {
-        messages: Array<{ id: string; guest_id: string; body: string; created_at: string }>;
-      };
+      const payload = (await response.json()) as { messages: RoomMessage[] };
 
       setMessages(payload.messages ?? []);
     }
@@ -352,9 +367,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
           return;
         }
 
-        const payload = (await response.json()) as {
-          messages: Array<{ id: string; guest_id: string; body: string; created_at: string }>;
-        };
+        const payload = (await response.json()) as { messages: RoomMessage[] };
         setMessages(payload.messages ?? []);
       })
       .on("presence", { event: "sync" }, () => {
@@ -567,20 +580,47 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
       body: JSON.stringify({ body }),
     });
 
-    const payload = (await response.json()) as { message?: string; ok?: boolean };
+    const payload = (await response.json()) as {
+      message?: string;
+      ok?: boolean;
+      messageRecord?: RoomMessage | null;
+    };
 
-    if (!response.ok) {
+    if (!response.ok || !payload.ok) {
       setMessage(payload.message ?? "채팅 전송에 실패했습니다.");
       return;
     }
 
     setChatInput("");
+    const messageRecord = payload.messageRecord;
+
+    if (messageRecord) {
+      setMessages((current) => [...current, messageRecord]);
+    }
 
     await roomChannelRef.current?.send({
       type: "broadcast",
       event: "chat-updated",
       payload: { roomCode },
     });
+  }
+
+  async function handleChatKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      await sendMessage();
+    }
+  }
+
+  function formatSenderRole(senderRole: RoomMessage["senderRole"]) {
+    switch (senderRole) {
+      case "host":
+        return "HOST";
+      case "guest":
+        return "GUEST";
+      default:
+        return "SPECTATOR";
+    }
   }
 
   return (
@@ -623,7 +663,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
               {roomSummary?.turnTimeSeconds ? `${roomSummary.turnTimeSeconds}초` : "제한 없음"}
             </p>
             {remainingSeconds !== null ? (
-              <p className="mt-2 text-sm text-black/60">현재 턴 남은 시간: {remainingSeconds}초</p>
+              <p className={`mt-2 text-lg font-semibold ${timerUrgencyClass}`}>현재 턴 남은 시간: {remainingSeconds}초</p>
             ) : null}
           </div>
           <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-4 md:col-span-3">
@@ -696,6 +736,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
 
       {gameState ? (
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="flex flex-col gap-6">
           <article ref={boardArticleRef} className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -754,6 +795,52 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
             </div>
           </article>
 
+          <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold">실시간 채팅</h3>
+                <p className="text-sm text-black/60">Enter로 전송하고, Shift+Enter로 줄바꿈할 수 있습니다.</p>
+              </div>
+            </div>
+
+            <div className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75">
+              {messages.length > 0 ? (
+                messages.map((chat) => (
+                  <div key={chat.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold text-black/60">{formatSenderRole(chat.senderRole)}</p>
+                      <p className="text-xs text-black/45">{new Date(chat.created_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap break-words">{chat.body}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-black/50">아직 채팅이 없습니다.</p>
+              )}
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <textarea
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={(event) => void handleChatKeyDown(event)}
+                placeholder={canChat ? "메시지를 입력하세요" : "채팅 불가"}
+                disabled={!canChat}
+                rows={3}
+                className="min-h-24 flex-1 resize-none rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <button
+                type="button"
+                onClick={() => void sendMessage()}
+                disabled={!canChat || !chatInput.trim()}
+                className="self-end rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                전송
+              </button>
+            </div>
+          </section>
+          </div>
+
           <aside className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm">
             <section className="flex flex-col gap-2">
               <h2 className="text-xl font-semibold">현재 상태</h2>
@@ -811,39 +898,6 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
                     </button>
                   );
                 })}
-              </div>
-            </section>
-
-            <section className="flex flex-col gap-3">
-              <h3 className="text-lg font-semibold">채팅</h3>
-              <div className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75">
-                {messages.length > 0 ? (
-                  messages.map((chat) => (
-                    <div key={chat.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-2">
-                      <p className="text-xs text-black/45">{chat.created_at}</p>
-                      <p className="mt-1 break-words">{chat.body}</p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-black/50">아직 채팅이 없습니다.</p>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  value={chatInput}
-                  onChange={(event) => setChatInput(event.target.value)}
-                  placeholder={canChat ? "메시지 입력" : "채팅 불가"}
-                  disabled={!canChat}
-                  className="flex-1 rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
-                />
-                <button
-                  type="button"
-                  onClick={() => void sendMessage()}
-                  disabled={!canChat || !chatInput.trim()}
-                  className="rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  전송
-                </button>
               </div>
             </section>
           </aside>
