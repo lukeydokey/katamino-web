@@ -73,7 +73,7 @@ export function RoomEntry() {
         return;
       }
 
-      router.push(`/room/${payload.roomCode}?seat=${payload.seat ?? "host"}`);
+      router.push(`/room/${payload.roomCode}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -91,32 +91,10 @@ export function RoomEntry() {
         },
         body: JSON.stringify({ code: joinCode.trim().toUpperCase() }),
       });
-      const payload = (await response.json()) as { message?: string; roomCode?: string; seat?: string };
+      const payload = (await response.json()) as { message?: string; roomCode?: string; role?: string };
 
       if (!response.ok || !payload.roomCode) {
         setMessage(payload.message ?? "방 참가에 실패했습니다.");
-        return;
-      }
-
-      router.push(`/room/${payload.roomCode}?seat=${payload.seat ?? "guest"}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  async function spectateRoom() {
-    setIsSubmitting(true);
-    setMessage(null);
-
-    try {
-      const roomCode = joinCode.trim().toUpperCase();
-      const response = await fetch(`/api/rooms/${roomCode}/spectate`, {
-        method: "POST",
-      });
-      const payload = (await response.json()) as { message?: string; roomCode?: string };
-
-      if (!response.ok || !payload.roomCode) {
-        setMessage(payload.message ?? "관전 참가에 실패했습니다.");
         return;
       }
 
@@ -132,7 +110,7 @@ export function RoomEntry() {
         <div>
           <h2 className="text-xl font-semibold">온라인 룸 진입</h2>
           <p className="text-sm leading-6 text-black/65">
-            새 방을 만들고 상대를 기다리거나, 받은 룸 코드로 바로 참가할 수 있습니다.
+            새 방을 만들고 상대를 기다리거나, 받은 룸 코드로 바로 들어가세요. guest 자리가 비어 있으면 먼저 참가하고, 아니면 자동으로 관전으로 입장합니다.
           </p>
         </div>
 
@@ -160,18 +138,9 @@ export function RoomEntry() {
             disabled={sessionStatus !== "ready" || isSubmitting || joinCode.trim().length < 4}
             className="rounded-2xl border border-[var(--line)] bg-white px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
           >
-            방 참가하기
+            방 입장하기
           </button>
         </div>
-
-        <button
-          type="button"
-          onClick={() => void spectateRoom()}
-          disabled={sessionStatus !== "ready" || isSubmitting || joinCode.trim().length < 4}
-          className="rounded-2xl border border-[var(--line)] bg-white px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          관전으로 입장하기
-        </button>
 
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium text-black/70" htmlFor="turn-time-seconds">

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canEnterGuestSeat,
   canStartRoom,
   computeDeadlineAt,
   createInitialRoomSnapshot,
@@ -45,6 +46,21 @@ describe("room service helpers", () => {
     ).toBe(true);
   });
 
+  it("진행 중이 아니고 guest 좌석이 비어 있으면 guest 입장이 가능하다", () => {
+    expect(canEnterGuestSeat("waiting", [{ guestId: "g1", seat: "host" }])).toBe(true);
+    expect(canEnterGuestSeat("finished", [{ guestId: "g1", seat: "host" }])).toBe(true);
+  });
+
+  it("게임 진행 중이거나 guest 좌석이 이미 차 있으면 guest 입장이 불가능하다", () => {
+    expect(canEnterGuestSeat("playing", [{ guestId: "g1", seat: "host" }])).toBe(false);
+    expect(
+      canEnterGuestSeat("waiting", [
+        { guestId: "g1", seat: "host" },
+        { guestId: "g2", seat: "guest" },
+      ]),
+    ).toBe(false);
+  });
+
   it("초기 room snapshot은 직렬화 가능해야 한다", () => {
     expect(serializeRoomSnapshot()).toEqual(createInitialRoomSnapshot());
   });
@@ -54,7 +70,7 @@ describe("room service helpers", () => {
       summarizeRoomState("ABC123", "waiting", [
         { guestId: "g1", seat: "host" },
         { guestId: "g2", seat: "guest" },
-      ], createInitialRoomSnapshot(), 30, "2026-07-18T00:00:00.000Z", 0),
+      ], [{ guestId: "s1" }], createInitialRoomSnapshot(), 30, "2026-07-18T00:00:00.000Z", 1),
     ).toEqual({
       roomCode: "ABC123",
       status: "waiting",
@@ -62,11 +78,12 @@ describe("room service helpers", () => {
         { guestId: "g1", seat: "host" },
         { guestId: "g2", seat: "guest" },
       ],
+      spectators: [{ guestId: "s1" }],
       canStart: true,
       gameState: createInitialRoomSnapshot(),
       turnTimeSeconds: 30,
       deadlineAt: "2026-07-18T00:00:00.000Z",
-      spectatorCount: 0,
+      spectatorCount: 1,
     });
   });
 

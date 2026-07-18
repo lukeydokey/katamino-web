@@ -42,10 +42,12 @@ export async function GET(_: Request, context: RoomRouteContext) {
       seat: player.seat,
     })) ?? [];
 
-  const { count: spectatorCount } = await supabase
+  const { data: spectators } = await supabase
     .from("room_spectators")
-    .select("*", { count: "exact", head: true })
+    .select("guest_id")
     .eq("room_id", room.id);
+
+  const normalizedSpectators = spectators?.map((spectator) => ({ guestId: spectator.guest_id })) ?? [];
 
   const { data: roomGame } = await supabase
     .from("room_games")
@@ -81,10 +83,11 @@ export async function GET(_: Request, context: RoomRouteContext) {
     room.code,
     roomStatus,
     normalizedPlayers,
+    normalizedSpectators,
     gameState,
     room.turn_time_seconds,
     deadlineAt,
-    spectatorCount ?? 0,
+    normalizedSpectators.length,
   );
 
   return NextResponse.json(summary);
