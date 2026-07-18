@@ -755,6 +755,25 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
           ) : null}
         </ul>
 
+        {!gameState ? (
+          <>
+            <div className="mt-6 flex flex-wrap gap-3">
+              {isWaitingRoom ? (
+                <button
+                  type="button"
+                  onClick={() => void startRoom()}
+                  disabled={isStarting || !canStart}
+                  className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {canStart ? "게임 시작" : normalizedSeat === "host" ? "상대 대기 중" : "호스트 대기 중"}
+                </button>
+              ) : null}
+            </div>
+
+            <p className="mt-4 min-h-6 text-sm text-[var(--accent)]">{message ?? ""}</p>
+          </>
+        ) : null}
+
       </section>
 
       {gameState ? (
