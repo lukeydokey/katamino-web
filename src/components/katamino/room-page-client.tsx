@@ -38,6 +38,8 @@ interface RoomMessage {
   senderRole: "host" | "guest" | "spectator";
 }
 
+type SidebarPanel = "status" | "tray" | "chat";
+
 function PieceShape({
   mask,
   filledClassName,
@@ -97,11 +99,14 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
   const [hoveredBoardCell, setHoveredBoardCell] = useState<{ x: number; y: number } | null>(null);
   const [pendingPlacementCell, setPendingPlacementCell] = useState<{ x: number; y: number } | null>(null);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [activeSidebarPanel, setActiveSidebarPanel] = useState<SidebarPanel>("status");
   const [nowTick, setNowTick] = useState(() => Date.now());
   const selectedPieceIdRef = useRef<PieceId | null>(null);
   const roomSummaryRef = useRef<RoomSummary | null>(null);
   const roomChannelRef = useRef<RealtimeChannel | null>(null);
   const boardArticleRef = useRef<HTMLElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickChatToBottomRef = useRef(true);
 
   const normalizedSeat = seat === "host" || seat === "guest" ? seat : undefined;
   const playerCount = roomSummary?.players.length ?? 0;
@@ -156,6 +161,8 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
   const canPlayTurn = gameState && normalizedSeat === gameState.currentTurnSeat;
   const spectatorCount = roomSummary?.spectatorCount ?? 0;
   const canChat = viewerRole === "player" || viewerRole === "spectator";
+  const showTrayPanel = Boolean(gameState);
+  const resolvedSidebarPanel = !showTrayPanel && activeSidebarPanel === "tray" ? "status" : activeSidebarPanel;
 
   const seatLabel = normalizedSeat === "host" ? "HOST" : normalizedSeat === "guest" ? "GUEST" : "미확인";
 
@@ -296,6 +303,14 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
       active = false;
     };
   }, [roomCode]);
+
+  useEffect(() => {
+    if (!chatScrollRef.current || !shouldStickChatToBottomRef.current) {
+      return;
+    }
+
+    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+  }, [messages]);
 
   useEffect(() => {
     const articleElement = boardArticleRef.current;
@@ -634,6 +649,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
 
     setChatInput("");
     const messageRecord = payload.messageRecord;
+    shouldStickChatToBottomRef.current = true;
 
     if (messageRecord) {
       setMessages((current) => [...current, messageRecord]);
@@ -681,6 +697,12 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
       default:
         return "SPECTATOR";
     }
+  }
+
+  function getSidebarSectionClass(panel: SidebarPanel) {
+    const isActive = resolvedSidebarPanel === panel;
+
+    return `${isActive ? "flex" : "hidden"} flex-col gap-3 lg:flex`;
   }
 
   return (
@@ -837,8 +859,49 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
             </article>
           )}
 
-          <aside className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6 lg:col-start-2">
-            <section className="flex flex-col gap-3">
+          <aside className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6 lg:sticky lg:top-6 lg:col-start-2 lg:self-start">
+            <div className="flex flex-wrap gap-2 lg:hidden">
+              <button
+                type="button"
+                onClick={() => setActiveSidebarPanel("status")}
+                aria-pressed={resolvedSidebarPanel === "status"}
+                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                  resolvedSidebarPanel === "status"
+                    ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-foreground)]"
+                    : "border-[var(--line)] bg-white text-black/70"
+                }`}
+              >
+                상태
+              </button>
+              {showTrayPanel ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveSidebarPanel("tray")}
+                  aria-pressed={resolvedSidebarPanel === "tray"}
+                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                    resolvedSidebarPanel === "tray"
+                      ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-foreground)]"
+                      : "border-[var(--line)] bg-white text-black/70"
+                  }`}
+                >
+                  트레이
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setActiveSidebarPanel("chat")}
+                aria-pressed={resolvedSidebarPanel === "chat"}
+                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                  resolvedSidebarPanel === "chat"
+                    ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-foreground)]"
+                    : "border-[var(--line)] bg-white text-black/70"
+                }`}
+              >
+                채팅
+              </button>
+            </div>
+
+            <section className={getSidebarSectionClass("status")}>
               <h2 className="text-xl font-semibold">현재 상태</h2>
               <p className="min-h-12 text-sm text-black/60">
                 {message ?? (viewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : gameState ? canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다." : roomHint)}
@@ -907,7 +970,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
             </section>
 
             {gameState ? (
-              <section className="flex flex-col gap-3">
+              <section className={getSidebarSectionClass("tray")}>
                 <h3 className="text-lg font-semibold">블록 트레이</h3>
                 <div className="grid grid-cols-2 gap-2">
                   {Object.values(gameState.pieces).map((piece) => {
@@ -951,17 +1014,25 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
               </section>
             ) : null}
 
-            <section className="flex flex-col gap-3">
+            <section className={getSidebarSectionClass("chat")}>
               <div>
                 <h3 className="text-lg font-semibold">실시간 채팅</h3>
                 <p className="text-sm text-black/60">Enter로 전송하고, Shift+Enter로 줄바꿈할 수 있습니다.</p>
               </div>
 
-              <div className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75">
+              <div
+                ref={chatScrollRef}
+                onScroll={(event) => {
+                  const element = event.currentTarget;
+                  shouldStickChatToBottomRef.current =
+                    element.scrollHeight - element.scrollTop - element.clientHeight < 40;
+                }}
+                className="max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75 lg:max-h-[40vh]"
+              >
                 {messages.length > 0 ? (
                   messages.map((chat) => (
                     <div key={chat.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-2">
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="text-xs font-semibold text-black/60">{formatSenderRole(chat.senderRole)}</p>
                         <p className="text-xs text-black/45">{new Date(chat.created_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>
                       </div>
