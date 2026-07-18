@@ -7,10 +7,15 @@ export interface RoomPlayerRecord {
   seat: PlayerSeat;
 }
 
+export interface RoomSpectatorRecord {
+  guestId: string;
+}
+
 export interface RoomSnapshotSummary {
   roomCode: string;
   status: RoomStatus;
   players: RoomPlayerRecord[];
+  spectators: RoomSpectatorRecord[];
   canStart: boolean;
   gameState: LocalGameSession | null;
   turnTimeSeconds: number;
@@ -49,6 +54,10 @@ export function canStartRoom(status: RoomStatus, players: RoomPlayerRecord[]) {
   return status === "waiting" && players.length === 2 && getAvailableSeat(players) === null;
 }
 
+export function canEnterGuestSeat(status: RoomStatus, players: RoomPlayerRecord[]) {
+  return status !== "playing" && getAvailableSeat(players) === "guest";
+}
+
 export function createInitialRoomSnapshot() {
   return createInitialGameSession();
 }
@@ -61,6 +70,7 @@ export function summarizeRoomState(
   roomCode: string,
   status: RoomStatus,
   players: RoomPlayerRecord[],
+  spectators: RoomSpectatorRecord[],
   gameState: LocalGameSession | null,
   turnTimeSeconds: number,
   deadlineAt: string | null,
@@ -70,6 +80,7 @@ export function summarizeRoomState(
     roomCode,
     status,
     players,
+    spectators,
     canStart: canStartRoom(status, players),
     gameState,
     turnTimeSeconds,

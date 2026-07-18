@@ -44,5 +44,5 @@ export default async function RoomPage({ params }: RoomPageProps) {
     }
   }
 
-  return <RoomPageClient roomCode={code} seat={seat} viewerRole={viewerRole} />;
+  return <RoomPageClient roomCode={code} seat={seat} viewerRole={viewerRole} guestId={guestId ?? undefined} />;
 }

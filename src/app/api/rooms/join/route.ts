@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ensureGuestSessionId } from "@/lib/guest-session";
-import { getAvailableSeat, type RoomPlayerRecord } from "@/lib/rooms/service";
+import { canEnterGuestSeat, getAvailableSeat, type RoomPlayerRecord } from "@/lib/rooms/service";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
@@ -48,24 +48,48 @@ export async function POST(request: Request) {
   const existingPlayer = normalizedPlayers.find((player) => player.guestId === guestId);
 
   if (existingPlayer) {
-    return NextResponse.json({ roomCode: room.code, seat: existingPlayer.seat });
+    return NextResponse.json({ roomCode: room.code, seat: existingPlayer.seat, role: "player" });
   }
 
-  const seat = getAvailableSeat(normalizedPlayers);
+  const { data: existingSpectator } = await supabase
+    .from("room_spectators")
+    .select("guest_id")
+    .eq("room_id", room.id)
+    .eq("guest_id", guestId)
+    .maybeSingle();
 
-  if (!seat) {
-    return NextResponse.json({ message: "이미 가득 찬 방입니다." }, { status: 409 });
+  if (existingSpectator) {
+    return NextResponse.json({ roomCode: room.code, role: "spectator" });
   }
 
-  const { error } = await supabase.from("room_players").insert({
+  if (canEnterGuestSeat(room.status, normalizedPlayers)) {
+    const seat = getAvailableSeat(normalizedPlayers);
+
+    if (seat !== "guest") {
+      return NextResponse.json({ message: "guest 좌석을 확인하는 중 문제가 발생했습니다." }, { status: 409 });
+    }
+
+    const { error } = await supabase.from("room_players").insert({
+      room_id: room.id,
+      guest_id: guestId,
+      seat,
+    });
+
+    if (error) {
+      return NextResponse.json({ message: "방 참가에 실패했습니다." }, { status: 500 });
+    }
+
+    return NextResponse.json({ roomCode: room.code, seat, role: "player" });
+  }
+
+  const { error } = await supabase.from("room_spectators").upsert({
     room_id: room.id,
     guest_id: guestId,
-    seat,
   });
 
   if (error) {
-    return NextResponse.json({ message: "방 참가에 실패했습니다." }, { status: 500 });
+    return NextResponse.json({ message: "관전 참가에 실패했습니다." }, { status: 500 });
   }
 
-  return NextResponse.json({ roomCode: room.code, seat });
+  return NextResponse.json({ roomCode: room.code, role: "spectator" });
 }
