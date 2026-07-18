@@ -755,59 +755,41 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
           ) : null}
         </ul>
 
-        {!gameState ? (
-          <>
-            <div className="mt-6 flex flex-wrap gap-3">
-              {isWaitingRoom ? (
-                <button
-                  type="button"
-                  onClick={() => void startRoom()}
-                  disabled={isStarting || !canStart}
-                  className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {canStart ? "게임 시작" : normalizedSeat === "host" ? "상대 대기 중" : "호스트 대기 중"}
-                </button>
-              ) : null}
-            </div>
-
-            <p className="mt-4 min-h-6 text-sm text-[var(--accent)]">{message ?? ""}</p>
-          </>
-        ) : null}
-
       </section>
 
-      {gameState ? (
+      {roomSummary ? (
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <article
-            ref={boardArticleRef}
-            className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6 lg:col-start-1"
-          >
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold">공유 게임 보드</h2>
-                <p className="text-sm text-black/60">
-                  {viewerRole === "spectator"
-                    ? "관전 중입니다. 보드 상태와 채팅을 실시간으로 확인할 수 있습니다."
-                    : canPlayTurn
-                    ? "지금은 내 차례입니다. 블록을 선택하고 놓을 위치를 정해 보세요."
-                    : "상대 차례입니다. 보드 상태가 자동으로 갱신됩니다."}
-                </p>
+          {gameState ? (
+            <article
+              ref={boardArticleRef}
+              className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6 lg:col-start-1"
+            >
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold">공유 게임 보드</h2>
+                  <p className="text-sm text-black/60">
+                    {viewerRole === "spectator"
+                      ? "관전 중입니다. 보드 상태와 채팅을 실시간으로 확인할 수 있습니다."
+                      : canPlayTurn
+                        ? "지금은 내 차례입니다. 블록을 선택하고 놓을 위치를 정해 보세요."
+                        : "상대 차례입니다. 보드 상태가 자동으로 갱신됩니다."}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRotation((current) => (current + 1) % 4);
+                    setPendingPlacementCell(null);
+                  }}
+                  disabled={viewerRole !== "player" || !canPlayTurn || !selectedPieceId}
+                  className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  선택 블록 회전
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setRotation((current) => (current + 1) % 4);
-                  setPendingPlacementCell(null);
-                }}
-                disabled={viewerRole !== "player" || !canPlayTurn || !selectedPieceId}
-                className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                선택 블록 회전
-              </button>
-            </div>
-
-            <div className="grid aspect-square max-w-[640px] grid-cols-8 gap-1.5 rounded-2xl bg-[var(--surface-strong)] p-3 sm:gap-2 sm:p-4">
+              <div className="grid aspect-square max-w-[640px] grid-cols-8 gap-1.5 rounded-2xl bg-[var(--surface-strong)] p-3 sm:gap-2 sm:p-4">
                 {gameState.board.map((row, y) =>
                   row.map((cell, x) => {
                     const isFilled = cell !== null;
@@ -830,39 +812,66 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
                               ? canPlaceAtHoveredCell
                                 ? "border-emerald-500 bg-emerald-100 text-emerald-800"
                                 : "border-rose-500 bg-rose-100 text-rose-700"
-                            : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-strong)]"
+                              : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-strong)]"
                         } disabled:cursor-not-allowed disabled:opacity-80`}
-                      aria-label={`${x},${y} 칸`}
-                    >
-                      {cell ? "" : ""}
-                    </button>
-                  );
-                }),
-              )}
-            </div>
-          </article>
+                        aria-label={`${x},${y} 칸`}
+                      >
+                        {cell ? "" : ""}
+                      </button>
+                    );
+                  }),
+                )}
+              </div>
+            </article>
+          ) : (
+            <article className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6 lg:col-start-1">
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold">공유 게임 보드</h2>
+                  <p className="mt-2 text-sm leading-6 text-black/60">{roomHeadline}</p>
+                </div>
+                <div className="rounded-2xl bg-[var(--surface-strong)] p-4 text-sm leading-6 text-black/70">
+                  {roomHint}
+                </div>
+              </div>
+            </article>
+          )}
 
-          <aside className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6 lg:col-start-2 lg:row-span-2">
+          <aside className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6 lg:col-start-2">
             <section className="flex flex-col gap-3">
               <h2 className="text-xl font-semibold">현재 상태</h2>
               <p className="min-h-12 text-sm text-black/60">
-                {message ?? (viewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다.")}
+                {message ?? (viewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : gameState ? canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다." : roomHint)}
               </p>
-              <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3">
-                <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">현재 턴</p>
-                <p className="mt-2 text-base font-semibold">{gameState.currentTurnSeat === "host" ? "HOST" : "GUEST"}</p>
-                {remainingSeconds !== null ? (
-                  <p className={`mt-2 text-lg font-semibold ${timerUrgencyClass}`}>현재 턴 남은 시간: {remainingSeconds}초</p>
-                ) : null}
-              </div>
-              <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-black/70">
-                <p>선택된 블록: {selectedPieceId ? selectedPieceId.replace("block", "블록 ") : "없음"}</p>
-                <p className="mt-2 min-h-10 text-black/65">
-                  {selectedPieceId && activePreviewCell
-                    ? `현재 미리보기: (${activePreviewCell.x}, ${activePreviewCell.y}) · ${canPlaceAtHoveredCell ? "배치 가능" : "배치 불가"}`
-                    : "블록을 선택하고 보드 위에 올리면 배치 가능 여부를 볼 수 있습니다."}
-                </p>
-              </div>
+              {gameState ? (
+                <>
+                  <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3">
+                    <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">현재 턴</p>
+                    <p className="mt-2 text-base font-semibold">{gameState.currentTurnSeat === "host" ? "HOST" : "GUEST"}</p>
+                    {remainingSeconds !== null ? (
+                      <p className={`mt-2 text-lg font-semibold ${timerUrgencyClass}`}>현재 턴 남은 시간: {remainingSeconds}초</p>
+                    ) : null}
+                  </div>
+                  <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-black/70">
+                    <p>선택된 블록: {selectedPieceId ? selectedPieceId.replace("block", "블록 ") : "없음"}</p>
+                    <p className="mt-2 min-h-10 text-black/65">
+                      {selectedPieceId && activePreviewCell
+                        ? `현재 미리보기: (${activePreviewCell.x}, ${activePreviewCell.y}) · ${canPlaceAtHoveredCell ? "배치 가능" : "배치 불가"}`
+                        : "블록을 선택하고 보드 위에 올리면 배치 가능 여부를 볼 수 있습니다."}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-black/70">
+                  <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">방 상태</p>
+                  <p className="mt-2 text-base font-semibold">{roomStatusLabel}</p>
+                  <p className="mt-2 text-black/65">
+                    {normalizedSeat === "host"
+                      ? "상대가 참가하면 여기서 바로 게임을 시작할 수 있습니다."
+                      : "호스트가 게임을 시작하면 보드와 트레이가 바로 열립니다."}
+                  </p>
+                </div>
+              )}
               <div className="flex flex-wrap gap-3">
                 {isWaitingRoom ? (
                   <button
@@ -897,94 +906,94 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
               </div>
             </section>
 
+            {gameState ? (
+              <section className="flex flex-col gap-3">
+                <h3 className="text-lg font-semibold">블록 트레이</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.values(gameState.pieces).map((piece) => {
+                    const isUsed = gameState.usedPieceIds.includes(piece.id);
+                    const isSelected = selectedPieceId === piece.id;
+
+                    return (
+                      <button
+                        key={piece.id}
+                        type="button"
+                        disabled={viewerRole !== "player" || isUsed || !canPlayTurn}
+                        onClick={() => {
+                          setSelectedPieceId((current) => (current === piece.id ? null : piece.id));
+                          setRotation(0);
+                          setHoveredBoardCell(null);
+                          setPendingPlacementCell(null);
+                        }}
+                        className={`rounded-2xl border px-3 py-3 text-left text-sm transition ${
+                          isUsed
+                            ? "cursor-not-allowed border-[var(--line)] bg-black/5 text-black/35"
+                            : isSelected
+                              ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-foreground)]"
+                              : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-strong)]"
+                        }`}
+                      >
+                        <div className="mb-2 flex items-start justify-between gap-2">
+                          <div className="font-semibold">{piece.id.replace("block", "블록 ")}</div>
+                          <div className="text-xs opacity-80">{isUsed ? "사용 완료" : `${rotation * 90}°`}</div>
+                        </div>
+
+                        <PieceShape
+                          mask={isSelected && previewMask ? previewMask : piece.currentMask}
+                          filledClassName={isSelected ? "bg-white/90" : getPieceColor(piece.id).fill}
+                          emptyClassName={isSelected ? "bg-white/20" : "bg-[var(--surface)]"}
+                          cellClassName="h-3 w-3 rounded-[4px] border border-[var(--line)]"
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+
             <section className="flex flex-col gap-3">
-              <h3 className="text-lg font-semibold">블록 트레이</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {Object.values(gameState.pieces).map((piece) => {
-                  const isUsed = gameState.usedPieceIds.includes(piece.id);
-                  const isSelected = selectedPieceId === piece.id;
-
-                  return (
-                    <button
-                      key={piece.id}
-                      type="button"
-                      disabled={viewerRole !== "player" || isUsed || !canPlayTurn}
-                      onClick={() => {
-                        setSelectedPieceId((current) => (current === piece.id ? null : piece.id));
-                        setRotation(0);
-                        setHoveredBoardCell(null);
-                        setPendingPlacementCell(null);
-                      }}
-                      className={`rounded-2xl border px-3 py-3 text-left text-sm transition ${
-                        isUsed
-                          ? "cursor-not-allowed border-[var(--line)] bg-black/5 text-black/35"
-                          : isSelected
-                            ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-foreground)]"
-                            : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-strong)]"
-                      }`}
-                    >
-                      <div className="mb-2 flex items-start justify-between gap-2">
-                        <div className="font-semibold">{piece.id.replace("block", "블록 ")}</div>
-                        <div className="text-xs opacity-80">{isUsed ? "사용 완료" : `${rotation * 90}°`}</div>
-                      </div>
-
-                      <PieceShape
-                        mask={isSelected && previewMask ? previewMask : piece.currentMask}
-                        filledClassName={isSelected ? "bg-white/90" : getPieceColor(piece.id).fill}
-                        emptyClassName={isSelected ? "bg-white/20" : "bg-[var(--surface)]"}
-                        cellClassName="h-3 w-3 rounded-[4px] border border-[var(--line)]"
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          </aside>
-
-          <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6 lg:col-start-1">
-            <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold">실시간 채팅</h3>
                 <p className="text-sm text-black/60">Enter로 전송하고, Shift+Enter로 줄바꿈할 수 있습니다.</p>
               </div>
-            </div>
 
-            <div className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75">
-              {messages.length > 0 ? (
-                messages.map((chat) => (
-                  <div key={chat.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-semibold text-black/60">{formatSenderRole(chat.senderRole)}</p>
-                      <p className="text-xs text-black/45">{new Date(chat.created_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>
+              <div className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75">
+                {messages.length > 0 ? (
+                  messages.map((chat) => (
+                    <div key={chat.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-semibold text-black/60">{formatSenderRole(chat.senderRole)}</p>
+                        <p className="text-xs text-black/45">{new Date(chat.created_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>
+                      </div>
+                      <p className="mt-1 whitespace-pre-wrap break-words">{chat.body}</p>
                     </div>
-                    <p className="mt-1 whitespace-pre-wrap break-words">{chat.body}</p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-black/50">아직 채팅이 없습니다.</p>
-              )}
-            </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-black/50">아직 채팅이 없습니다.</p>
+                )}
+              </div>
 
-            <div className="mt-4 flex gap-2">
-              <textarea
-                value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
-                onKeyDown={(event) => void handleChatKeyDown(event)}
-                placeholder={canChat ? "메시지를 입력하세요" : "채팅 불가"}
-                disabled={!canChat}
-                rows={3}
-                className="min-h-24 flex-1 resize-none rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
-              />
-              <button
-                type="button"
-                onClick={() => void sendMessage()}
-                disabled={!canChat || !chatInput.trim()}
-                className="self-end rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                전송
-              </button>
-            </div>
-          </section>
+              <div className="flex gap-2">
+                <textarea
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  onKeyDown={(event) => void handleChatKeyDown(event)}
+                  placeholder={canChat ? "메시지를 입력하세요" : "채팅 불가"}
+                  disabled={!canChat}
+                  rows={3}
+                  className="min-h-24 flex-1 resize-none rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => void sendMessage()}
+                  disabled={!canChat || !chatInput.trim()}
+                  className="self-end rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  전송
+                </button>
+              </div>
+            </section>
+          </aside>
         </section>
       ) : null}
     </main>
