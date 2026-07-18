@@ -95,8 +95,11 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
   const [selectedPieceId, setSelectedPieceId] = useState<PieceId | null>(null);
   const [rotation, setRotation] = useState(0);
   const [hoveredBoardCell, setHoveredBoardCell] = useState<{ x: number; y: number } | null>(null);
+  const [pendingPlacementCell, setPendingPlacementCell] = useState<{ x: number; y: number } | null>(null);
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const selectedPieceIdRef = useRef<PieceId | null>(null);
+  const roomSummaryRef = useRef<RoomSummary | null>(null);
   const roomChannelRef = useRef<RealtimeChannel | null>(null);
   const boardArticleRef = useRef<HTMLElement | null>(null);
 
@@ -123,13 +126,14 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
     return nextMask;
   }, [rotation, selectedPiece]);
 
+  const activePreviewCell = isCoarsePointer ? pendingPlacementCell : hoveredBoardCell;
   const canPlaceAtHoveredCell =
-    gameState && previewMask && hoveredBoardCell
-      ? canPlacePiece(gameState.board, previewMask, hoveredBoardCell.x, hoveredBoardCell.y)
+    gameState && previewMask && activePreviewCell
+      ? canPlacePiece(gameState.board, previewMask, activePreviewCell.x, activePreviewCell.y)
       : false;
   const previewCells =
-    previewMask && hoveredBoardCell
-      ? getPreviewCells(previewMask, hoveredBoardCell.x, hoveredBoardCell.y)
+    previewMask && activePreviewCell
+      ? getPreviewCells(previewMask, activePreviewCell.x, activePreviewCell.y)
       : [];
   const previewCellMap = new Map(previewCells.map((cell) => [`${cell.x}-${cell.y}`, cell]));
 
@@ -236,6 +240,21 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
     };
   }, [roomSummary?.deadlineAt]);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(pointer: coarse)");
+
+    const syncPointerType = () => {
+      setIsCoarsePointer(mediaQuery.matches);
+    };
+
+    syncPointerType();
+    mediaQuery.addEventListener("change", syncPointerType);
+
+    return () => {
+      mediaQuery.removeEventListener("change", syncPointerType);
+    };
+  }, []);
+
   async function copyRoomCode() {
     try {
       await navigator.clipboard.writeText(roomCode);
@@ -248,6 +267,10 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
   useEffect(() => {
     selectedPieceIdRef.current = selectedPieceId;
   }, [selectedPieceId]);
+
+  useEffect(() => {
+    roomSummaryRef.current = roomSummary;
+  }, [roomSummary]);
 
   useEffect(() => {
     let active = true;
@@ -288,6 +311,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
 
       event.preventDefault();
       setRotation((current) => (current + 1) % 4);
+      setPendingPlacementCell(null);
     };
 
     articleElement.addEventListener("wheel", handleWheel, { passive: false });
@@ -306,6 +330,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
       setSelectedPieceId(null);
       setRotation(0);
       setHoveredBoardCell(null);
+      setPendingPlacementCell(null);
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -330,13 +355,26 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
       }
 
       const payload = (await response.json()) as RoomSummary;
+      const previousSummary = roomSummaryRef.current;
       setRoomSummary(payload);
 
       const currentSelectedPieceId = selectedPieceIdRef.current;
+      const turnNumberReset =
+        previousSummary?.gameState && payload.gameState
+          ? payload.gameState.turnNumber < previousSummary.gameState.turnNumber
+          : false;
 
-      if (currentSelectedPieceId && payload.gameState?.usedPieceIds.includes(currentSelectedPieceId)) {
+      if (
+        currentSelectedPieceId &&
+        (payload.gameState?.usedPieceIds.includes(currentSelectedPieceId) ||
+          payload.status !== "playing" ||
+          payload.gameState?.phase !== "playing" ||
+          turnNumberReset)
+      ) {
         setSelectedPieceId(null);
         setRotation(0);
+        setHoveredBoardCell(null);
+        setPendingPlacementCell(null);
       }
     }
 
@@ -449,6 +487,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
     setSelectedPieceId(null);
     setRotation(0);
     setHoveredBoardCell(null);
+    setPendingPlacementCell(null);
 
     setRoomSummary((current) =>
       current
@@ -492,6 +531,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
     setSelectedPieceId(null);
     setRotation(0);
     setHoveredBoardCell(null);
+    setPendingPlacementCell(null);
     setRoomSummary((current) =>
       current
         ? {
@@ -544,6 +584,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
     setSelectedPieceId(null);
     setRotation(0);
     setHoveredBoardCell(null);
+    setPendingPlacementCell(null);
     setRoomSummary((current) =>
       current
         ? {
@@ -606,10 +647,29 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
   }
 
   async function handleChatKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.nativeEvent.isComposing) {
+      return;
+    }
+
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       await sendMessage();
     }
+  }
+
+  async function handleBoardCellClick(x: number, y: number) {
+    if (viewerRole !== "player" || !canPlayTurn || !selectedPieceId) {
+      return;
+    }
+
+    if (isCoarsePointer) {
+      if (!pendingPlacementCell || pendingPlacementCell.x !== x || pendingPlacementCell.y !== y) {
+        setPendingPlacementCell({ x, y });
+        return;
+      }
+    }
+
+    await placeMove(x, y);
   }
 
   function formatSenderRole(senderRole: RoomMessage["senderRole"]) {
@@ -624,14 +684,14 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-8 px-6 py-10">
-      <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm">
+    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 px-4 py-6 sm:gap-8 sm:px-6 sm:py-10">
+      <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6">
         <p className="text-sm font-semibold tracking-[0.2em] text-[var(--accent)] uppercase">
           Online Room
         </p>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-2">
-            <h1 className="text-3xl font-bold tracking-tight">룸 {roomCode}</h1>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">룸 {roomCode}</h1>
             <p className="text-sm leading-6 text-black/65">{roomHeadline}</p>
           </div>
 
@@ -644,31 +704,28 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
           </button>
         </div>
 
-        <div className="mt-6 grid gap-3 md:grid-cols-3">
-          <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-4">
+        <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border border-[var(--line)] bg-white px-3 py-3 sm:px-4 sm:py-4">
             <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">내 좌석</p>
             <p className="mt-2 text-lg font-semibold">{seatLabel}</p>
           </div>
-          <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-4">
+          <div className="rounded-2xl border border-[var(--line)] bg-white px-3 py-3 sm:px-4 sm:py-4">
             <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">방 상태</p>
             <p className="mt-2 text-lg font-semibold">{roomStatusLabel}</p>
           </div>
-          <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-4">
+          <div className="rounded-2xl border border-[var(--line)] bg-white px-3 py-3 sm:px-4 sm:py-4">
             <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">참여 인원</p>
             <p className="mt-2 text-lg font-semibold">{playerCount} / 2</p>
           </div>
-          <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-4 md:col-span-3">
+          <div className="rounded-2xl border border-[var(--line)] bg-white px-3 py-3 sm:px-4 sm:py-4">
+            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">관전자</p>
+            <p className="mt-2 text-lg font-semibold">{spectatorCount}명</p>
+          </div>
+          <div className="rounded-2xl border border-[var(--line)] bg-white px-3 py-3 sm:px-4 sm:py-4 md:col-span-4">
             <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">턴 시간 제한</p>
             <p className="mt-2 text-lg font-semibold">
               {roomSummary?.turnTimeSeconds ? `${roomSummary.turnTimeSeconds}초` : "제한 없음"}
             </p>
-            {remainingSeconds !== null ? (
-              <p className={`mt-2 text-lg font-semibold ${timerUrgencyClass}`}>현재 턴 남은 시간: {remainingSeconds}초</p>
-            ) : null}
-          </div>
-          <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-4 md:col-span-3">
-            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">관전자</p>
-            <p className="mt-2 text-lg font-semibold">{spectatorCount}명</p>
           </div>
         </div>
 
@@ -698,46 +755,14 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
           ) : null}
         </ul>
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          {isWaitingRoom ? (
-            <button
-              type="button"
-              onClick={() => void startRoom()}
-              disabled={isStarting || !canStart}
-              className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {canStart ? "게임 시작" : normalizedSeat === "host" ? "상대 대기 중" : "호스트 대기 중"}
-            </button>
-          ) : null}
-
-          {isPlayingRoom && viewerRole === "player" ? (
-            <button
-              type="button"
-              onClick={() => void forfeitRoom()}
-              className="rounded-2xl border border-[var(--line)] bg-white px-5 py-3 text-sm font-semibold text-black/75"
-            >
-              기권하기
-            </button>
-          ) : null}
-
-          {isFinishedRoom && normalizedSeat === "host" ? (
-            <button
-              type="button"
-              onClick={() => void requestRematch()}
-              className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--accent-foreground)]"
-            >
-              같은 룸에서 다시 시작
-            </button>
-          ) : null}
-        </div>
-
-        <p className="mt-4 min-h-6 text-sm text-[var(--accent)]">{message ?? ""}</p>
       </section>
 
       {gameState ? (
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="flex flex-col gap-6">
-          <article ref={boardArticleRef} className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm">
+          <article
+            ref={boardArticleRef}
+            className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6 lg:col-start-1"
+          >
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-semibold">공유 게임 보드</h2>
@@ -752,7 +777,10 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
 
               <button
                 type="button"
-                onClick={() => setRotation((current) => (current + 1) % 4)}
+                onClick={() => {
+                  setRotation((current) => (current + 1) % 4);
+                  setPendingPlacementCell(null);
+                }}
                 disabled={viewerRole !== "player" || !canPlayTurn || !selectedPieceId}
                 className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -760,7 +788,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
               </button>
             </div>
 
-            <div className="grid aspect-square max-w-[640px] grid-cols-8 gap-2 rounded-2xl bg-[var(--surface-strong)] p-4">
+            <div className="grid aspect-square max-w-[640px] grid-cols-8 gap-1.5 rounded-2xl bg-[var(--surface-strong)] p-3 sm:gap-2 sm:p-4">
                 {gameState.board.map((row, y) =>
                   row.map((cell, x) => {
                     const isFilled = cell !== null;
@@ -771,10 +799,10 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
                       <button
                         key={`${x}-${y}`}
                         type="button"
-                      onMouseEnter={() => setHoveredBoardCell({ x, y })}
-                      onFocus={() => setHoveredBoardCell({ x, y })}
-                      onMouseLeave={() => setHoveredBoardCell(null)}
-                      onClick={() => void placeMove(x, y)}
+                        onMouseEnter={() => !isCoarsePointer && setHoveredBoardCell({ x, y })}
+                        onFocus={() => setHoveredBoardCell({ x, y })}
+                        onMouseLeave={() => !isCoarsePointer && setHoveredBoardCell(null)}
+                        onClick={() => void handleBoardCellClick(x, y)}
                         disabled={viewerRole !== "player" || !canPlayTurn || !selectedPieceId}
                         className={`flex items-center justify-center rounded-lg border text-xs font-medium transition ${
                           isFilled && cell
@@ -795,7 +823,106 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
             </div>
           </article>
 
-          <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm">
+          <aside className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6 lg:col-start-2 lg:row-span-2">
+            <section className="flex flex-col gap-3">
+              <h2 className="text-xl font-semibold">현재 상태</h2>
+              <p className="min-h-12 text-sm text-black/60">
+                {message ?? (viewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다.")}
+              </p>
+              <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3">
+                <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">현재 턴</p>
+                <p className="mt-2 text-base font-semibold">{gameState.currentTurnSeat === "host" ? "HOST" : "GUEST"}</p>
+                {remainingSeconds !== null ? (
+                  <p className={`mt-2 text-lg font-semibold ${timerUrgencyClass}`}>현재 턴 남은 시간: {remainingSeconds}초</p>
+                ) : null}
+              </div>
+              <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-black/70">
+                <p>선택된 블록: {selectedPieceId ? selectedPieceId.replace("block", "블록 ") : "없음"}</p>
+                <p className="mt-2 min-h-10 text-black/65">
+                  {selectedPieceId && activePreviewCell
+                    ? `현재 미리보기: (${activePreviewCell.x}, ${activePreviewCell.y}) · ${canPlaceAtHoveredCell ? "배치 가능" : "배치 불가"}`
+                    : "블록을 선택하고 보드 위에 올리면 배치 가능 여부를 볼 수 있습니다."}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {isWaitingRoom ? (
+                  <button
+                    type="button"
+                    onClick={() => void startRoom()}
+                    disabled={isStarting || !canStart}
+                    className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {canStart ? "게임 시작" : normalizedSeat === "host" ? "상대 대기 중" : "호스트 대기 중"}
+                  </button>
+                ) : null}
+
+                {isPlayingRoom && viewerRole === "player" ? (
+                  <button
+                    type="button"
+                    onClick={() => void forfeitRoom()}
+                    className="rounded-2xl border border-[var(--line)] bg-white px-5 py-3 text-sm font-semibold text-black/75"
+                  >
+                    기권하기
+                  </button>
+                ) : null}
+
+                {isFinishedRoom && normalizedSeat === "host" ? (
+                  <button
+                    type="button"
+                    onClick={() => void requestRematch()}
+                    className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--accent-foreground)]"
+                  >
+                    같은 룸에서 다시 시작
+                  </button>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="flex flex-col gap-3">
+              <h3 className="text-lg font-semibold">블록 트레이</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.values(gameState.pieces).map((piece) => {
+                  const isUsed = gameState.usedPieceIds.includes(piece.id);
+                  const isSelected = selectedPieceId === piece.id;
+
+                  return (
+                    <button
+                      key={piece.id}
+                      type="button"
+                      disabled={viewerRole !== "player" || isUsed || !canPlayTurn}
+                      onClick={() => {
+                        setSelectedPieceId((current) => (current === piece.id ? null : piece.id));
+                        setRotation(0);
+                        setHoveredBoardCell(null);
+                        setPendingPlacementCell(null);
+                      }}
+                      className={`rounded-2xl border px-3 py-3 text-left text-sm transition ${
+                        isUsed
+                          ? "cursor-not-allowed border-[var(--line)] bg-black/5 text-black/35"
+                          : isSelected
+                            ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-foreground)]"
+                            : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-strong)]"
+                      }`}
+                    >
+                      <div className="mb-2 flex items-start justify-between gap-2">
+                        <div className="font-semibold">{piece.id.replace("block", "블록 ")}</div>
+                        <div className="text-xs opacity-80">{isUsed ? "사용 완료" : `${rotation * 90}°`}</div>
+                      </div>
+
+                      <PieceShape
+                        mask={isSelected && previewMask ? previewMask : piece.currentMask}
+                        filledClassName={isSelected ? "bg-white/90" : getPieceColor(piece.id).fill}
+                        emptyClassName={isSelected ? "bg-white/20" : "bg-[var(--surface)]"}
+                        cellClassName="h-3 w-3 rounded-[4px] border border-[var(--line)]"
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          </aside>
+
+          <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6 lg:col-start-1">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold">실시간 채팅</h3>
@@ -839,68 +966,6 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
               </button>
             </div>
           </section>
-          </div>
-
-          <aside className="flex flex-col gap-4 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm">
-            <section className="flex flex-col gap-2">
-              <h2 className="text-xl font-semibold">현재 상태</h2>
-              <p className="min-h-12 text-sm text-black/60">
-                {message ?? (viewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다.")}
-              </p>
-              <p className="text-sm text-black/70">
-                선택된 블록: {selectedPieceId ? selectedPieceId.replace("block", "블록 ") : "없음"}
-              </p>
-              <p className="text-sm text-black/70">
-                현재 턴: {gameState.currentTurnSeat === "host" ? "HOST" : "GUEST"}
-              </p>
-              <p className="min-h-10 text-sm text-black/65">
-                {selectedPieceId && hoveredBoardCell
-                  ? `현재 미리보기: (${hoveredBoardCell.x}, ${hoveredBoardCell.y}) · ${canPlaceAtHoveredCell ? "배치 가능" : "배치 불가"}`
-                  : "블록을 선택하고 보드 위에 올리면 배치 가능 여부를 볼 수 있습니다."}
-              </p>
-            </section>
-
-            <section className="flex flex-col gap-3">
-              <h3 className="text-lg font-semibold">블록 트레이</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {Object.values(gameState.pieces).map((piece) => {
-                  const isUsed = gameState.usedPieceIds.includes(piece.id);
-                  const isSelected = selectedPieceId === piece.id;
-
-                  return (
-                    <button
-                      key={piece.id}
-                      type="button"
-                       disabled={viewerRole !== "player" || isUsed || !canPlayTurn}
-                      onClick={() => {
-                        setSelectedPieceId((current) => (current === piece.id ? null : piece.id));
-                        setRotation(0);
-                      }}
-                      className={`rounded-2xl border px-3 py-3 text-left text-sm transition ${
-                        isUsed
-                          ? "cursor-not-allowed border-[var(--line)] bg-black/5 text-black/35"
-                          : isSelected
-                            ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-foreground)]"
-                            : "border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-strong)]"
-                      }`}
-                    >
-                      <div className="mb-2 flex items-start justify-between gap-2">
-                        <div className="font-semibold">{piece.id.replace("block", "블록 ")}</div>
-                        <div className="text-xs opacity-80">{isUsed ? "사용 완료" : `${rotation * 90}°`}</div>
-                      </div>
-
-                      <PieceShape
-                        mask={isSelected && previewMask ? previewMask : piece.currentMask}
-                        filledClassName={isSelected ? "bg-white/90" : getPieceColor(piece.id).fill}
-                        emptyClassName={isSelected ? "bg-white/20" : "bg-[var(--surface)]"}
-                        cellClassName="h-3 w-3 rounded-[4px] border border-[var(--line)]"
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          </aside>
         </section>
       ) : null}
     </main>
