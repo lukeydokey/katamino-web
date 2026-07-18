@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { canPlacePiece } from "@/domain/katamino/board";
 import { getPieceColor, rotateMaskClockwise } from "@/domain/katamino/pieces";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -40,7 +40,6 @@ interface RoomMessage {
 }
 
 type SidebarPanel = "status" | "tray" | "chat";
-type ChatSidebarMode = "messages" | "participants";
 
 interface ActivityItem {
   id: string;
@@ -90,6 +89,17 @@ function RoleBadge({
   );
 }
 
+function PeopleIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M7 8.25a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Z" />
+      <path d="M2.75 15.75c0-2.35 1.9-4.25 4.25-4.25s4.25 1.9 4.25 4.25" />
+      <path d="M14 8.25a2.25 2.25 0 1 0 0-4.5" />
+      <path d="M12.75 11.75c1.9.23 3.5 1.59 4 3.42" />
+    </svg>
+  );
+}
+
 function getPreviewCells(mask: number[][], x: number, y: number) {
   const previewCells: Array<{ x: number; y: number }> = [];
 
@@ -130,7 +140,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const [pendingPlacementCell, setPendingPlacementCell] = useState<{ x: number; y: number } | null>(null);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [activeSidebarPanel, setActiveSidebarPanel] = useState<SidebarPanel>("status");
-  const [chatSidebarMode, setChatSidebarMode] = useState<ChatSidebarMode>("messages");
+  const [showParticipants, setShowParticipants] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const selectedPieceIdRef = useRef<PieceId | null>(null);
   const roomSummaryRef = useRef<RoomSummary | null>(null);
@@ -380,30 +390,38 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     roomSummaryRef.current = roomSummary;
   }, [roomSummary]);
 
+  const fetchMessages = useCallback(async () => {
+    const response = await fetch(`/api/rooms/${roomCode}/messages`, {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const payload = (await response.json()) as { messages: RoomMessage[] };
+    setMessages(payload.messages ?? []);
+    return true;
+  }, [roomCode]);
+
   useEffect(() => {
     let active = true;
 
-    async function fetchMessages() {
-      const response = await fetch(`/api/rooms/${roomCode}/messages`, {
-        method: "GET",
-        cache: "no-store",
-      });
+    async function loadMessages() {
+      const ok = await fetchMessages();
 
-      if (!active || !response.ok) {
+      if (!active || !ok) {
         return;
       }
-
-      const payload = (await response.json()) as { messages: RoomMessage[] };
-
-      setMessages(payload.messages ?? []);
     }
 
-    void fetchMessages();
+    void loadMessages();
 
     return () => {
       active = false;
     };
-  }, [roomCode]);
+  }, [fetchMessages]);
 
   useEffect(() => {
     if (!chatScrollRef.current || !shouldStickChatToBottomRef.current) {
@@ -533,11 +551,15 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       }
     }
 
-    void fetchRoomSummary();
+    void (async () => {
+      await fetchRoomSummary();
+      await fetchMessages();
+    })();
 
     const intervalId = window.setInterval(() => {
       void fetchRoomSummary();
-    }, 2500);
+      void fetchMessages();
+    }, 1500);
 
     const channel = client
       ?.channel(`room:${roomCode}`, {
@@ -549,22 +571,14 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       })
       .on("broadcast", { event: "room-updated" }, () => {
         void fetchRoomSummary();
+        void fetchMessages();
       })
       .on("broadcast", { event: "chat-updated" }, async () => {
-        const response = await fetch(`/api/rooms/${roomCode}/messages`, {
-          method: "GET",
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = (await response.json()) as { messages: RoomMessage[] };
-        setMessages(payload.messages ?? []);
+        await fetchMessages();
       })
       .on("presence", { event: "sync" }, () => {
         void fetchRoomSummary();
+        void fetchMessages();
       });
 
     roomChannelRef.current = channel ?? null;
@@ -586,7 +600,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       channel?.unsubscribe();
       roomChannelRef.current = null;
     };
-  }, [effectiveViewerRole, normalizedSeat, roomCode]);
+  }, [effectiveViewerRole, fetchMessages, normalizedSeat, roomCode]);
 
   useEffect(() => {
     if (effectiveViewerRole !== "viewer" || isResolvingEntry) {
@@ -974,29 +988,24 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
           </button>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-          <div className="rounded-2xl border border-[var(--line)] bg-white px-3 py-3 sm:px-4 sm:py-4">
-            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">내 좌석</p>
-            <p className="mt-2 text-lg font-semibold">{seatLabel}</p>
-            <p className="mt-2 text-xs text-black/55">{normalizedSeat === "host" ? "H 표시" : normalizedSeat === "guest" ? "G 표시" : "좌석 미지정"}</p>
+        <div className="mt-6 flex flex-wrap gap-2 text-sm text-black/70">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white px-4 py-2">
+            <span className="text-xs font-semibold tracking-[0.12em] text-black/45 uppercase">좌석</span>
+            <span className="font-semibold text-black">{seatLabel}</span>
           </div>
-          <div className="rounded-2xl border border-[var(--line)] bg-white px-3 py-3 sm:px-4 sm:py-4">
-            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">방 상태</p>
-            <p className="mt-2 text-lg font-semibold">{roomStatusLabel}</p>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white px-4 py-2">
+            <span className="text-xs font-semibold tracking-[0.12em] text-black/45 uppercase">상태</span>
+            <span className="font-semibold text-black">{roomStatusLabel}</span>
           </div>
-          <div className="rounded-2xl border border-[var(--line)] bg-white px-3 py-3 sm:px-4 sm:py-4">
-            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">참여 인원</p>
-            <p className="mt-2 text-lg font-semibold">{playerCount} / 2</p>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white px-4 py-2">
+            <PeopleIcon />
+            <span className="font-semibold text-black">{playerCount}</span>
+            <span className="text-black/55">/ 2</span>
+            <span className="text-black/45">· 관전자 {spectatorCount}</span>
           </div>
-          <div className="rounded-2xl border border-[var(--line)] bg-white px-3 py-3 sm:px-4 sm:py-4">
-            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">관전자</p>
-            <p className="mt-2 text-lg font-semibold">{spectatorCount}명</p>
-          </div>
-          <div className="rounded-2xl border border-[var(--line)] bg-white px-3 py-3 sm:px-4 sm:py-4 md:col-span-4">
-            <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">턴 시간 제한</p>
-            <p className="mt-2 text-lg font-semibold">
-              {roomSummary?.turnTimeSeconds ? `${roomSummary.turnTimeSeconds}초` : "제한 없음"}
-            </p>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white px-4 py-2">
+            <span className="text-xs font-semibold tracking-[0.12em] text-black/45 uppercase">턴</span>
+            <span className="font-semibold text-black">{roomSummary?.turnTimeSeconds ? `${roomSummary.turnTimeSeconds}초` : "제한 없음"}</span>
           </div>
         </div>
 
@@ -1287,93 +1296,81 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                 </div>
                 <button
                   type="button"
-                  onClick={() => setChatSidebarMode((current) => (current === "messages" ? "participants" : "messages"))}
+                  onClick={() => setShowParticipants((current) => !current)}
                   className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-xs font-semibold text-black/70"
                 >
-                  {chatSidebarMode === "messages" ? `참여자 ${participantItems.length}` : "대화 보기"}
+                  <span className="inline-flex items-center gap-2">
+                    <PeopleIcon />
+                    <span>{participantItems.length}</span>
+                  </span>
                 </button>
               </div>
 
-              {chatSidebarMode === "participants" ? (
-                <div className="space-y-3 rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75">
-                  <div className="space-y-2">
-                    {participantItems.map((participant) => (
-                      <div key={participant.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <RoleBadge shortLabel={participant.shortLabel} label={participant.label} />
-                          <span className="text-xs text-black/50">{participant.detail}</span>
-                        </div>
+              {showParticipants ? (
+                <div className="space-y-2 rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75">
+                  {participantItems.map((participant) => (
+                    <div key={participant.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <RoleBadge shortLabel={participant.shortLabel} label={participant.label} />
+                        <span className="text-xs text-black/50">{participant.detail}</span>
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
 
-                  <div className="rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface)] px-3 py-3">
-                    <p className="text-xs font-semibold tracking-[0.12em] text-black/45 uppercase">최근 활동</p>
-                    <div className="mt-2 space-y-2 text-xs text-black/60">
-                      {activityItems.length > 0 ? (
-                        activityItems.map((item) => (
-                          <p key={item.id}>• {item.body}</p>
-                        ))
-                      ) : (
-                        <p>아직 기록된 입장/퇴장 활동이 없습니다.</p>
-                      )}
+              <div
+                ref={chatScrollRef}
+                onScroll={(event) => {
+                  const element = event.currentTarget;
+                  shouldStickChatToBottomRef.current =
+                    element.scrollHeight - element.scrollTop - element.clientHeight < 40;
+                }}
+                className="max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75 lg:max-h-[40vh]"
+              >
+                {activityItems.length > 0 ? (
+                  <div className="rounded-xl bg-[var(--surface)] px-3 py-3 text-xs text-black/55">
+                    <div className="space-y-1">
+                      {activityItems.map((item) => (
+                        <p key={item.id}>• {item.body}</p>
+                      ))}
                     </div>
                   </div>
-                </div>
-              ) : (
-                <>
-                  <div
-                    ref={chatScrollRef}
-                    onScroll={(event) => {
-                      const element = event.currentTarget;
-                      shouldStickChatToBottomRef.current =
-                        element.scrollHeight - element.scrollTop - element.clientHeight < 40;
-                    }}
-                    className="max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75 lg:max-h-[40vh]"
-                  >
-                    {activityItems.length > 0 ? (
-                      <div className="space-y-2 rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface)] px-3 py-3 text-xs text-black/55">
-                        {activityItems.map((item) => (
-                          <p key={item.id}>• {item.body}</p>
-                        ))}
+                ) : null}
+                {messages.length > 0 ? (
+                  messages.map((chat) => (
+                    <div key={chat.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-semibold text-black/60">{formatSenderRole(chat.senderRole)}</p>
+                        <p className="text-xs text-black/45">{new Date(chat.created_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>
                       </div>
-                    ) : null}
-                    {messages.length > 0 ? (
-                      messages.map((chat) => (
-                        <div key={chat.id} className="rounded-xl bg-[var(--surface-strong)] px-3 py-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-xs font-semibold text-black/60">{formatSenderRole(chat.senderRole)}</p>
-                            <p className="text-xs text-black/45">{new Date(chat.created_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>
-                          </div>
-                          <p className="mt-1 whitespace-pre-wrap break-words">{chat.body}</p>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-black/50">아직 채팅이 없습니다.</p>
-                    )}
-                  </div>
+                      <p className="mt-1 whitespace-pre-wrap break-words">{chat.body}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-black/50">아직 채팅이 없습니다.</p>
+                )}
+              </div>
 
-                  <div className="flex gap-2">
-                    <textarea
-                      value={chatInput}
-                      onChange={(event) => setChatInput(event.target.value)}
-                      onKeyDown={(event) => void handleChatKeyDown(event)}
-                      placeholder={canChat ? "메시지를 입력하세요" : "채팅 불가"}
-                      disabled={!canChat}
-                      rows={3}
-                      className="min-h-24 flex-1 resize-none rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void sendMessage()}
-                      disabled={!canChat || !chatInput.trim()}
-                      className="self-end rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      전송
-                    </button>
-                  </div>
-                </>
-              )}
+              <div className="flex gap-2">
+                <textarea
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  onKeyDown={(event) => void handleChatKeyDown(event)}
+                  placeholder={canChat ? "메시지를 입력하세요" : "채팅 불가"}
+                  disabled={!canChat}
+                  rows={3}
+                  className="min-h-24 flex-1 resize-none rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => void sendMessage()}
+                  disabled={!canChat || !chatInput.trim()}
+                  className="self-end rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  전송
+                </button>
+              </div>
             </section>
           </aside>
         </section>
