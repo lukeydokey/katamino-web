@@ -139,8 +139,11 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const shouldStickChatToBottomRef = useRef(true);
 
-  const effectiveViewerRole = roleOverride ?? viewerRole;
-  const effectiveSeat = seatOverride ?? seat;
+  const joinedPlayer = guestId ? roomSummary?.players.find((player) => player.guestId === guestId) : undefined;
+  const joinedSpectator = guestId ? roomSummary?.spectators.find((spectator) => spectator.guestId === guestId) : undefined;
+  const effectiveViewerRole =
+    roleOverride ?? (joinedPlayer ? "player" : joinedSpectator ? "spectator" : viewerRole);
+  const effectiveSeat = seatOverride ?? joinedPlayer?.seat ?? seat;
   const normalizedSeat = effectiveSeat === "host" || effectiveSeat === "guest" ? effectiveSeat : undefined;
   const playerCount = roomSummary?.players.length ?? 0;
   const canStart = normalizedSeat === "host" && roomSummary?.canStart;
