@@ -65,6 +65,23 @@ function PieceShape({
   );
 }
 
+function RoleBadge({
+  shortLabel,
+  label,
+}: {
+  shortLabel: string;
+  label: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white px-3 py-1 text-xs font-semibold tracking-[0.08em] text-black/70 uppercase">
+      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--surface-strong)] px-1 text-[11px] leading-none text-black/80">
+        {shortLabel}
+      </span>
+      <span>{label}</span>
+    </span>
+  );
+}
+
 function getPreviewCells(mask: number[][], x: number, y: number) {
   const previewCells: Array<{ x: number; y: number }> = [];
 
@@ -691,11 +708,11 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
   function formatSenderRole(senderRole: RoomMessage["senderRole"]) {
     switch (senderRole) {
       case "host":
-        return "HOST";
+        return "HOST · H";
       case "guest":
-        return "GUEST";
+        return "GUEST · G";
       default:
-        return "SPECTATOR";
+        return "SPECTATOR · S";
     }
   }
 
@@ -730,6 +747,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
           <div className="rounded-2xl border border-[var(--line)] bg-white px-3 py-3 sm:px-4 sm:py-4">
             <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">내 좌석</p>
             <p className="mt-2 text-lg font-semibold">{seatLabel}</p>
+            <p className="mt-2 text-xs text-black/55">{normalizedSeat === "host" ? "H 표시" : normalizedSeat === "guest" ? "G 표시" : "좌석 미지정"}</p>
           </div>
           <div className="rounded-2xl border border-[var(--line)] bg-white px-3 py-3 sm:px-4 sm:py-4">
             <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">방 상태</p>
@@ -765,14 +783,21 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
         <ul className="mt-4 space-y-2 text-sm text-black/70">
           {roomSummary?.players.map((player) => (
             <li key={`${player.guestId}-${player.seat}`} className="rounded-xl border border-[var(--line)] bg-white px-4 py-3">
-              <span className="font-semibold">{player.seat === "host" ? "HOST" : "GUEST"}</span>
-              <span className="ml-2 text-black/60">입장 완료</span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <RoleBadge
+                  shortLabel={player.seat === "host" ? "H" : "G"}
+                  label={player.seat === "host" ? "HOST" : "GUEST"}
+                />
+                <span className="text-sm text-black/60">입장 완료</span>
+              </div>
             </li>
           ))}
           {viewerRole === "spectator" ? (
             <li className="rounded-xl border border-[var(--line)] bg-white px-4 py-3">
-              <span className="font-semibold">SPECTATOR</span>
-              <span className="ml-2 text-black/60">관전 중</span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <RoleBadge shortLabel="S" label="SPECTATOR" />
+                <span className="text-sm text-black/60">관전 중</span>
+              </div>
             </li>
           ) : null}
         </ul>
@@ -838,7 +863,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
                         } disabled:cursor-not-allowed disabled:opacity-80`}
                         aria-label={`${x},${y} 칸`}
                       >
-                        {cell ? "" : ""}
+                        {cell ? "" : isPreviewCell ? (canPlaceAtHoveredCell ? "○" : "×") : ""}
                       </button>
                     );
                   }),
@@ -910,7 +935,13 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
                 <>
                   <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3">
                     <p className="text-xs font-semibold tracking-[0.14em] text-black/45 uppercase">현재 턴</p>
-                    <p className="mt-2 text-base font-semibold">{gameState.currentTurnSeat === "host" ? "HOST" : "GUEST"}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <RoleBadge
+                        shortLabel={gameState.currentTurnSeat === "host" ? "H" : "G"}
+                        label={gameState.currentTurnSeat === "host" ? "HOST" : "GUEST"}
+                      />
+                      <span className="text-sm text-black/65">{canPlayTurn ? "내 턴" : "상대 턴"}</span>
+                    </div>
                     {remainingSeconds !== null ? (
                       <p className={`mt-2 text-lg font-semibold ${timerUrgencyClass}`}>현재 턴 남은 시간: {remainingSeconds}초</p>
                     ) : null}
@@ -998,7 +1029,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole }: RoomPageClientPro
                       >
                         <div className="mb-2 flex items-start justify-between gap-2">
                           <div className="font-semibold">{piece.id.replace("block", "블록 ")}</div>
-                          <div className="text-xs opacity-80">{isUsed ? "사용 완료" : `${rotation * 90}°`}</div>
+                          <div className="text-xs opacity-80">{isUsed ? "사용 완료" : isSelected ? "선택됨" : `${rotation * 90}°`}</div>
                         </div>
 
                         <PieceShape
