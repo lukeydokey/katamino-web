@@ -47,6 +47,8 @@ interface ActivityItem {
   createdAt: string;
 }
 
+type RealtimeStatus = "connecting" | "live" | "reconnecting";
+
 function PieceShape({
   mask,
   filledClassName,
@@ -141,6 +143,8 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [activeSidebarPanel, setActiveSidebarPanel] = useState<SidebarPanel>("status");
   const [showParticipants, setShowParticipants] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("connecting");
+  const [reconnectNonce, setReconnectNonce] = useState(0);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const selectedPieceIdRef = useRef<PieceId | null>(null);
   const roomSummaryRef = useRef<RoomSummary | null>(null);
@@ -148,6 +152,8 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const boardArticleRef = useRef<HTMLElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const shouldStickChatToBottomRef = useRef(true);
+  const realtimeStatusRef = useRef<RealtimeStatus>("connecting");
+  const reconnectTimerRef = useRef<number | null>(null);
 
   const joinedPlayer = guestId ? roomSummary?.players.find((player) => player.guestId === guestId) : undefined;
   const joinedSpectator = guestId ? roomSummary?.spectators.find((spectator) => spectator.guestId === guestId) : undefined;
@@ -327,6 +333,9 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     return "border-[var(--line)] bg-white text-black/70";
   }, [message]);
 
+  const realtimeStatusLabel =
+    realtimeStatus === "live" ? "실시간 연결됨" : realtimeStatus === "reconnecting" ? "재연결 중" : "연결 중";
+
   const remainingSeconds = (() => {
     if (!roomSummary?.deadlineAt) {
       return null;
@@ -390,6 +399,10 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     roomSummaryRef.current = roomSummary;
   }, [roomSummary]);
 
+  useEffect(() => {
+    realtimeStatusRef.current = realtimeStatus;
+  }, [realtimeStatus]);
+
   const fetchMessages = useCallback(async () => {
     const response = await fetch(`/api/rooms/${roomCode}/messages`, {
       method: "GET",
@@ -405,23 +418,91 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     return true;
   }, [roomCode]);
 
-  useEffect(() => {
-    let active = true;
+  const fetchRoomSummary = useCallback(async () => {
+    const response = await fetch(`/api/rooms/${roomCode}`, {
+      method: "GET",
+      cache: "no-store",
+    });
 
-    async function loadMessages() {
-      const ok = await fetchMessages();
+    if (!response.ok) {
+      return false;
+    }
 
-      if (!active || !ok) {
-        return;
+    const payload = (await response.json()) as RoomSummary;
+    const previousSummary = roomSummaryRef.current;
+    setRoomSummary(payload);
+
+    if (previousSummary) {
+      const previousSeats = new Set(previousSummary.players.map((player) => player.seat));
+      const nextSeats = new Set(payload.players.map((player) => player.seat));
+
+      if (!previousSeats.has("guest") && nextSeats.has("guest")) {
+        setActivityItems((current) => [
+          ...current.slice(-7),
+          { id: `${Date.now()}-guest-join`, body: "GUEST가 입장했습니다.", createdAt: new Date().toISOString() },
+        ]);
+      }
+
+      if (previousSeats.has("guest") && !nextSeats.has("guest")) {
+        setActivityItems((current) => [
+          ...current.slice(-7),
+          { id: `${Date.now()}-guest-leave`, body: "GUEST가 자리를 비웠습니다.", createdAt: new Date().toISOString() },
+        ]);
+      }
+
+      const spectatorDelta = payload.spectatorCount - previousSummary.spectatorCount;
+
+      if (spectatorDelta !== 0) {
+        setActivityItems((current) => [
+          ...current.slice(-7),
+          {
+            id: `${Date.now()}-spectator-delta`,
+            body:
+              spectatorDelta > 0
+                ? `관전자 ${spectatorDelta}명이 입장했습니다.`
+                : `관전자 ${Math.abs(spectatorDelta)}명이 퇴장했습니다.`,
+            createdAt: new Date().toISOString(),
+          },
+        ]);
       }
     }
 
-    void loadMessages();
+    const currentSelectedPieceId = selectedPieceIdRef.current;
+    const turnNumberReset =
+      previousSummary?.gameState && payload.gameState
+        ? payload.gameState.turnNumber < previousSummary.gameState.turnNumber
+        : false;
 
-    return () => {
-      active = false;
-    };
-  }, [fetchMessages]);
+    if (
+      currentSelectedPieceId &&
+      (payload.gameState?.usedPieceIds.includes(currentSelectedPieceId) ||
+        payload.status !== "playing" ||
+        payload.gameState?.phase !== "playing" ||
+        turnNumberReset)
+    ) {
+      setSelectedPieceId(null);
+      setRotation(0);
+      setHoveredBoardCell(null);
+      setPendingPlacementCell(null);
+    }
+
+    return true;
+  }, [roomCode]);
+
+  const refetchRoomAndMessages = useCallback(async () => {
+    await Promise.all([fetchRoomSummary(), fetchMessages()]);
+  }, [fetchMessages, fetchRoomSummary]);
+
+  const scheduleReconnect = useCallback(() => {
+    if (reconnectTimerRef.current !== null) {
+      return;
+    }
+
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = null;
+      setReconnectNonce((current) => current + 1);
+    }, 1200);
+  }, []);
 
   useEffect(() => {
     if (!chatScrollRef.current || !shouldStickChatToBottomRef.current) {
@@ -478,88 +559,15 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     let active = true;
     const client = getSupabaseBrowserClient();
 
-    function appendActivityItem(body: string) {
-      setActivityItems((current) => [
-        ...current.slice(-7),
-        {
-          id: `${Date.now()}-${body}`,
-          body,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-    }
-
-    function recordRoomActivity(previousSummary: RoomSummary | null, nextSummary: RoomSummary) {
-      if (!previousSummary) {
-        return;
-      }
-
-      const previousSeats = new Set(previousSummary.players.map((player) => player.seat));
-      const nextSeats = new Set(nextSummary.players.map((player) => player.seat));
-
-      if (!previousSeats.has("guest") && nextSeats.has("guest")) {
-        appendActivityItem("GUEST가 입장했습니다.");
-      }
-
-      if (previousSeats.has("guest") && !nextSeats.has("guest")) {
-        appendActivityItem("GUEST가 자리를 비웠습니다.");
-      }
-
-      const spectatorDelta = nextSummary.spectatorCount - previousSummary.spectatorCount;
-
-      if (spectatorDelta > 0) {
-        appendActivityItem(`관전자 ${spectatorDelta}명이 입장했습니다.`);
-      }
-
-      if (spectatorDelta < 0) {
-        appendActivityItem(`관전자 ${Math.abs(spectatorDelta)}명이 퇴장했습니다.`);
-      }
-    }
-
-    async function fetchRoomSummary() {
-      const response = await fetch(`/api/rooms/${roomCode}`, {
-        method: "GET",
-        cache: "no-store",
-      });
-
-      if (!active || !response.ok) {
-        return;
-      }
-
-      const payload = (await response.json()) as RoomSummary;
-      const previousSummary = roomSummaryRef.current;
-      setRoomSummary(payload);
-      recordRoomActivity(previousSummary, payload);
-
-      const currentSelectedPieceId = selectedPieceIdRef.current;
-      const turnNumberReset =
-        previousSummary?.gameState && payload.gameState
-          ? payload.gameState.turnNumber < previousSummary.gameState.turnNumber
-          : false;
-
-      if (
-        currentSelectedPieceId &&
-        (payload.gameState?.usedPieceIds.includes(currentSelectedPieceId) ||
-          payload.status !== "playing" ||
-          payload.gameState?.phase !== "playing" ||
-          turnNumberReset)
-      ) {
-        setSelectedPieceId(null);
-        setRotation(0);
-        setHoveredBoardCell(null);
-        setPendingPlacementCell(null);
-      }
-    }
-
-    void (async () => {
-      await fetchRoomSummary();
-      await fetchMessages();
-    })();
+    const initialSyncTimerId = window.setTimeout(() => {
+      void refetchRoomAndMessages();
+    }, 0);
 
     const intervalId = window.setInterval(() => {
-      void fetchRoomSummary();
-      void fetchMessages();
-    }, 1500);
+      if (realtimeStatusRef.current !== "live") {
+        void refetchRoomAndMessages();
+      }
+    }, 4000);
 
     const channel = client
       ?.channel(`room:${roomCode}`, {
@@ -570,37 +578,77 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
         },
       })
       .on("broadcast", { event: "room-updated" }, () => {
-        void fetchRoomSummary();
-        void fetchMessages();
+        void refetchRoomAndMessages();
       })
       .on("broadcast", { event: "chat-updated" }, async () => {
         await fetchMessages();
       })
       .on("presence", { event: "sync" }, () => {
-        void fetchRoomSummary();
-        void fetchMessages();
+        void refetchRoomAndMessages();
       });
 
     roomChannelRef.current = channel ?? null;
 
     channel?.subscribe(async (status) => {
+      if (!active) {
+        return;
+      }
+
       if (status === "SUBSCRIBED") {
+        setRealtimeStatus("live");
+
+        if (reconnectTimerRef.current !== null) {
+          window.clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
+
         await channel.track({
           roomCode,
           seat: normalizedSeat ?? "observer",
           role: effectiveViewerRole,
           onlineAt: new Date().toISOString(),
         });
+        await refetchRoomAndMessages();
+        return;
+      }
+
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        setRealtimeStatus("reconnecting");
+        scheduleReconnect();
       }
     });
 
+    const handleVisibilityOrOnline = () => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+
+      void refetchRoomAndMessages();
+
+      if (realtimeStatusRef.current !== "live") {
+        scheduleReconnect();
+      }
+    };
+
+    window.addEventListener("online", handleVisibilityOrOnline);
+    document.addEventListener("visibilitychange", handleVisibilityOrOnline);
+
     return () => {
       active = false;
+      window.clearTimeout(initialSyncTimerId);
       window.clearInterval(intervalId);
+      window.removeEventListener("online", handleVisibilityOrOnline);
+      document.removeEventListener("visibilitychange", handleVisibilityOrOnline);
+
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+
       channel?.unsubscribe();
       roomChannelRef.current = null;
     };
-  }, [effectiveViewerRole, fetchMessages, normalizedSeat, roomCode]);
+  }, [effectiveViewerRole, normalizedSeat, refetchRoomAndMessages, roomCode, scheduleReconnect, reconnectNonce, fetchMessages]);
 
   useEffect(() => {
     if (effectiveViewerRole !== "viewer" || isResolvingEntry) {
@@ -1293,6 +1341,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                 <div>
                   <h3 className="text-lg font-semibold">실시간 채팅</h3>
                   <p className="text-sm text-black/60">Enter로 전송하고, Shift+Enter로 줄바꿈할 수 있습니다.</p>
+                  <p className="mt-1 text-xs text-black/45">{realtimeStatusLabel}</p>
                 </div>
                 <button
                   type="button"
