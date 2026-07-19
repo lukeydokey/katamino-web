@@ -416,6 +416,16 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     return "border-[var(--line)] bg-white text-black/70";
   }, [message]);
 
+  const statusNotice =
+    message ??
+    (effectiveViewerRole === "spectator"
+      ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다."
+      : gameState
+        ? canPlayTurn
+          ? "둘 블록을 선택하세요."
+          : null
+        : roomHint);
+
   const latestActivityToneClass = useMemo(() => {
     if (!latestActivityItem) {
       return "border-[var(--line)] bg-[var(--surface-strong)] text-black/70";
@@ -1517,9 +1527,11 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                   <span className="text-black/55">온라인 {onlineParticipantCount}명</span>
                 </div>
               </div>
-              <div className={`rounded-2xl border px-4 py-3 text-sm leading-6 ${messageToneClass}`}>
-              {message ?? (effectiveViewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : gameState ? canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다." : roomHint)}
-              </div>
+              {statusNotice ? (
+                <div className={`rounded-2xl border px-4 py-3 text-sm leading-6 ${messageToneClass}`}>
+                  {statusNotice}
+                </div>
+              ) : null}
               {isFinishedRoom && rematchStatusLabel ? (
                 <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm leading-6 text-black/70">
                   <p className="text-xs font-semibold tracking-[0.12em] text-black/45 uppercase">다음 단계</p>
