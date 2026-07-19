@@ -222,6 +222,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const unreadMessageCount = isChatDrawerOpen ? 0 : Math.max(0, activityItems.length + messages.length);
 
   const seatLabel = normalizedSeat === "host" ? "HOST" : normalizedSeat === "guest" ? "GUEST" : effectiveViewerRole === "spectator" ? "SPECTATOR" : "미확인";
+  const latestActivityItem = activityItems.at(-1) ?? null;
 
   const roomHeadline = useMemo(() => {
     if (!roomSummary) {
@@ -337,6 +338,22 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
 
     return "border-[var(--line)] bg-white text-black/70";
   }, [message]);
+
+  const latestActivityToneClass = useMemo(() => {
+    if (!latestActivityItem) {
+      return "border-[var(--line)] bg-[var(--surface-strong)] text-black/70";
+    }
+
+    if (latestActivityItem.body.includes("시작") || latestActivityItem.body.includes("차례")) {
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    }
+
+    if (latestActivityItem.body.includes("종료") || latestActivityItem.body.includes("기권") || latestActivityItem.body.includes("시간 초과")) {
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    }
+
+    return "border-[var(--line)] bg-[var(--surface-strong)] text-black/70";
+  }, [latestActivityItem]);
 
   const realtimeStatusLabel =
     realtimeStatus === "live" ? "실시간 연결됨" : realtimeStatus === "reconnecting" ? "재연결 중" : "연결 중";
@@ -484,6 +501,25 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     return true;
   }, [roomCode]);
 
+  const pushActivityItem = useCallback((body: string) => {
+    setActivityItems((current) => {
+      const lastBody = current.at(-1)?.body;
+
+      if (lastBody === body) {
+        return current;
+      }
+
+      return [
+        ...current.slice(-7),
+        {
+          id: `${Date.now()}-${body}`,
+          body,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    });
+  }, []);
+
   const fetchRoomSummary = useCallback(async () => {
     const response = await fetch(`/api/rooms/${roomCode}`, {
       method: "GET",
@@ -503,33 +539,41 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       const nextSeats = new Set(payload.players.map((player) => player.seat));
 
       if (!previousSeats.has("guest") && nextSeats.has("guest")) {
-        setActivityItems((current) => [
-          ...current.slice(-7),
-          { id: `${Date.now()}-guest-join`, body: "GUEST가 입장했습니다.", createdAt: new Date().toISOString() },
-        ]);
+        pushActivityItem("GUEST가 입장했습니다.");
       }
 
       if (previousSeats.has("guest") && !nextSeats.has("guest")) {
-        setActivityItems((current) => [
-          ...current.slice(-7),
-          { id: `${Date.now()}-guest-leave`, body: "GUEST가 자리를 비웠습니다.", createdAt: new Date().toISOString() },
-        ]);
+        pushActivityItem("GUEST가 자리를 비웠습니다.");
       }
 
       const spectatorDelta = payload.spectatorCount - previousSummary.spectatorCount;
 
       if (spectatorDelta !== 0) {
-        setActivityItems((current) => [
-          ...current.slice(-7),
-          {
-            id: `${Date.now()}-spectator-delta`,
-            body:
-              spectatorDelta > 0
-                ? `관전자 ${spectatorDelta}명이 입장했습니다.`
-                : `관전자 ${Math.abs(spectatorDelta)}명이 퇴장했습니다.`,
-            createdAt: new Date().toISOString(),
-          },
-        ]);
+        pushActivityItem(
+          spectatorDelta > 0
+            ? `관전자 ${spectatorDelta}명이 입장했습니다.`
+            : `관전자 ${Math.abs(spectatorDelta)}명이 퇴장했습니다.`,
+        );
+      }
+
+      if (previousSummary.status !== payload.status) {
+        if (payload.status === "playing") {
+          pushActivityItem("게임이 시작되었습니다.");
+        }
+
+        if (payload.status === "finished") {
+          pushActivityItem("현재 판이 종료되었습니다.");
+        }
+      }
+
+      if (
+        previousSummary.gameState?.turnNumber !== undefined &&
+        payload.gameState?.turnNumber !== undefined &&
+        payload.gameState.turnNumber > previousSummary.gameState.turnNumber
+      ) {
+        const actingSeat = previousSummary.gameState.currentTurnSeat === "host" ? "HOST" : "GUEST";
+        const nextSeat = payload.gameState.currentTurnSeat === "host" ? "HOST" : "GUEST";
+        pushActivityItem(`${actingSeat}가 수를 두었습니다. 이제 ${nextSeat} 차례입니다.`);
       }
     }
 
@@ -553,7 +597,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     }
 
     return true;
-  }, [roomCode]);
+  }, [pushActivityItem, roomCode]);
 
   const refetchRoomAndMessages = useCallback(async () => {
     await Promise.all([fetchRoomSummary(), fetchMessages()]);
@@ -1185,6 +1229,12 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                 </button>
               </div>
 
+              {latestActivityItem ? (
+                <div className={`mb-4 rounded-2xl border px-4 py-3 text-sm font-medium ${latestActivityToneClass}`}>
+                  최근 변화 · {latestActivityItem.body}
+                </div>
+              ) : null}
+
               <div className="grid aspect-square max-w-[640px] grid-cols-8 gap-1.5 rounded-2xl bg-[var(--surface-strong)] p-3 sm:gap-2 sm:p-4">
                 {gameState.board.map((row, y) =>
                   row.map((cell, x) => {
@@ -1279,6 +1329,12 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
 
             <section className={getSidebarSectionClass("status")}>
               <h2 className="text-xl font-semibold">현재 상태</h2>
+              {latestActivityItem ? (
+                <div className={`rounded-2xl border px-4 py-3 text-sm ${latestActivityToneClass}`}>
+                  <p className="text-xs font-semibold tracking-[0.12em] uppercase text-current/80">최근 변화</p>
+                  <p className="mt-2 leading-6">{latestActivityItem.body}</p>
+                </div>
+              ) : null}
               <div className={`rounded-2xl border px-4 py-3 text-sm leading-6 ${messageToneClass}`}>
                 {message ?? (effectiveViewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : gameState ? canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다." : roomHint)}
               </div>
