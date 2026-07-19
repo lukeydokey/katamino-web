@@ -6,20 +6,29 @@
 
 ## 현재 상태
 
-- `Next.js` App Router 기반 프론트엔드 스캐폴드 완료
-- Katamino 블록 데이터/회전/배치 규칙을 TypeScript 도메인으로 분리 완료
-- 단일 브라우저에서 블록 선택/회전/배치가 가능한 로컬 플레이 UI 구현 완료
-- 방 생성 / 참가 / 시작이 가능한 room entry 및 lobby UI 추가 완료
-- 공유 룸에서 보드 상태와 수를 주고받는 기본 multiplayer 흐름 구현 완료
-- 기권 / 종료 / 같은 룸에서 다시 시작하는 리매치 흐름 구현 완료
-- hosted Supabase 프로젝트 및 Vercel 프로젝트 연결 완료
-- `Vitest` 단위 테스트 + `Playwright` smoke test 구성 완료
-- production 배포 완료
+- `Next.js` App Router 기반 프론트엔드 / room UI / local play UI 운영 중
+- Katamino 블록 데이터, 회전, 배치 규칙을 순수 TypeScript 도메인으로 분리 완료
+- 단일 브라우저 로컬 플레이와 온라인 room 플레이 둘 다 가능
+- room 기능 현재 범위:
+  - 방 생성 / 코드 입장 / direct-link 입장
+  - guest 우선 입장, 자리 없으면 spectator fallback
+  - pre-game guest ↔ spectator 전환
+  - turn timer / forfeit / timeout / rematch
+  - spectator chat 참여
+  - 실시간 room 동기화 + reconnect/catch-up 보강
+- 홈 화면에 게임 설명 패널 추가 완료
+- room 화면 UX 개선 반영:
+  - board 중심 레이아웃
+  - turn / activity / endgame 안내 강화
+  - participant / presence 표시 강화
+  - chat drawer + unread badge 반영
+- `Vitest` 단위 테스트 + room 포함 `Playwright` E2E 운영 중
+- production 배포 및 반복 검증 루프 운영 중
 
 ## 접속 링크
 
 - Production: `https://katamino-web.vercel.app`
-- Preview: `https://katamino-e5j6p883i-lukeydokeys-projects.vercel.app`
+- Preview는 Vercel 배포마다 바뀌므로 `vercel` / GitHub PR에서 확인
 
 ## 기술 스택
 
@@ -48,7 +57,7 @@ src/
   components/katamino/     # UI 컴포넌트
   domain/katamino/         # 게임 규칙/상태 도메인
   test/                    # 테스트 설정
-e2e/                       # Playwright E2E smoke test
+e2e/                       # Playwright E2E (local smoke + room flow)
 docs/temp/                 # 레거시 참고 자료 (gitignore)
 docs/plan/                 # 로컬 계획 문서 (gitignore)
 ```
@@ -136,11 +145,17 @@ npm run supabase:typegen
 
 ## 앞으로 남은 큰 작업
 
-1. 공유 보드에서 블록을 숫자 대신 색상으로 더 직관적으로 구분하기
-2. 방 생성 시 턴 제한 시간을 설정하고 실제 게임에 반영하기
-3. 관전자 모드 추가
-4. 공유 룸 채팅 추가
-5. 일반 사용자 플레이 기준으로 게임 흐름과 화면 UX를 계속 다듬기
+1. room presence를 더 정교하게 다듬기
+   - true disconnect / background / reconnect 상태 구분
+   - participant 상태 표현 세분화
+2. room component를 더 작게 분리하기
+   - `room-page-client.tsx`의 header / board / status / chat drawer 분리
+3. room E2E를 더 촘촘하게 확장하기
+   - role switch / unread badge / spectator fallback / reconnect edge case
+4. endgame / retention polish 추가 다듬기
+   - replay motivation / activity history / rematch clarity 강화
+5. 시각 polish 후속 작업
+   - spacing / hierarchy / motion / badge tone refinement
 
 ## 배포 체크리스트
 
