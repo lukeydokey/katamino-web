@@ -139,6 +139,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const [isSwitchingRole, setIsSwitchingRole] = useState(false);
   const [headerActionFeedback, setHeaderActionFeedback] = useState<HeaderActionFeedback>(null);
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+  const [onlineGuestIds, setOnlineGuestIds] = useState<string[]>([]);
   const [selectedPieceId, setSelectedPieceId] = useState<PieceId | null>(null);
   const [rotation, setRotation] = useState(0);
   const [hoveredBoardCell, setHoveredBoardCell] = useState<{ x: number; y: number } | null>(null);
@@ -243,6 +244,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const showTrayPanel = Boolean(gameState);
   const resolvedSidebarPanel = !showTrayPanel && activeSidebarPanel === "tray" ? "status" : activeSidebarPanel;
   const unreadMessageCount = isChatDrawerOpen ? 0 : Math.max(0, activityItems.length + messages.length);
+  const onlineParticipantCount = onlineGuestIds.length;
 
   const seatLabel = normalizedSeat === "host" ? "HOST" : normalizedSeat === "guest" ? "GUEST" : effectiveViewerRole === "spectator" ? "SPECTATOR" : "미확인";
   const latestActivityItem = activityItems.at(-1) ?? null;
@@ -543,6 +545,21 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     });
   }, []);
 
+  const syncOnlineParticipants = useCallback((channel: RealtimeChannel | null) => {
+    if (!channel) {
+      setOnlineGuestIds([]);
+      return;
+    }
+
+    const presenceState = channel.presenceState<Record<string, unknown>>();
+    const nextGuestIds = Object.values(presenceState)
+      .flatMap((entries) => entries)
+      .map((entry) => (typeof entry.guestId === "string" ? entry.guestId : null))
+      .filter((guestId): guestId is string => guestId !== null);
+
+    setOnlineGuestIds(Array.from(new Set(nextGuestIds)));
+  }, []);
+
   const fetchRoomSummary = useCallback(async () => {
     const response = await fetch(`/api/rooms/${roomCode}`, {
       method: "GET",
@@ -706,7 +723,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       ?.channel(`room:${roomCode}`, {
         config: {
           presence: {
-            key: normalizedSeat ?? crypto.randomUUID(),
+            key: guestId ?? normalizedSeat ?? crypto.randomUUID(),
           },
         },
       })
@@ -717,7 +734,14 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
         await fetchMessages();
       })
       .on("presence", { event: "sync" }, () => {
+        syncOnlineParticipants(channel ?? null);
         void refetchRoomAndMessages();
+      })
+      .on("presence", { event: "join" }, () => {
+        syncOnlineParticipants(channel ?? null);
+      })
+      .on("presence", { event: "leave" }, () => {
+        syncOnlineParticipants(channel ?? null);
       });
 
     roomChannelRef.current = channel ?? null;
@@ -737,10 +761,12 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
 
         await channel.track({
           roomCode,
+          guestId: guestId ?? null,
           seat: normalizedSeat ?? "observer",
           role: effectiveViewerRole,
           onlineAt: new Date().toISOString(),
         });
+        syncOnlineParticipants(channel);
         await refetchRoomAndMessages();
         return;
       }
@@ -780,8 +806,9 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
 
       channel?.unsubscribe();
       roomChannelRef.current = null;
+      setOnlineGuestIds([]);
     };
-  }, [effectiveViewerRole, normalizedSeat, refetchRoomAndMessages, roomCode, scheduleReconnect, reconnectNonce, fetchMessages]);
+  }, [effectiveViewerRole, fetchMessages, guestId, normalizedSeat, reconnectNonce, refetchRoomAndMessages, roomCode, scheduleReconnect, syncOnlineParticipants]);
 
   useEffect(() => {
     if (effectiveViewerRole !== "viewer" || isResolvingEntry) {
@@ -1128,7 +1155,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       label: player.seat === "host" ? "HOST" : "GUEST",
       shortLabel: player.seat === "host" ? "H" : "G",
       isYou: player.guestId === guestId,
-      detail: player.guestId === guestId ? "나" : "참가 중",
+      detail: player.guestId === guestId ? (onlineGuestIds.includes(player.guestId) ? "나 · 온라인" : "나 · 자리 비움") : onlineGuestIds.includes(player.guestId) ? "온라인" : "자리 비움",
     })) ?? [];
 
     const spectatorItems = roomSummary?.spectators.map((spectator, index) => ({
@@ -1136,11 +1163,11 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       label: `SPECTATOR ${index + 1}`,
       shortLabel: "S",
       isYou: spectator.guestId === guestId,
-      detail: spectator.guestId === guestId ? "나" : "관전 중",
+      detail: spectator.guestId === guestId ? (onlineGuestIds.includes(spectator.guestId) ? "나 · 온라인" : "나 · 자리 비움") : onlineGuestIds.includes(spectator.guestId) ? "관전 중" : "오프라인",
     })) ?? [];
 
     return [...playerItems, ...spectatorItems];
-  }, [guestId, roomSummary?.players, roomSummary?.spectators]);
+  }, [guestId, onlineGuestIds, roomSummary?.players, roomSummary?.spectators]);
 
   function getSidebarSectionClass(panel: SidebarPanel) {
     const isActive = resolvedSidebarPanel === panel;
@@ -1197,6 +1224,10 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
             <span className="font-semibold text-black">{playerCount}</span>
             <span className="text-black/55">/ 2</span>
             <span className="text-black/45">· 관전자 {spectatorCount}</span>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white px-4 py-2">
+            <span className="text-xs font-semibold tracking-[0.12em] text-black/45 uppercase">온라인</span>
+            <span className="font-semibold text-black">{onlineParticipantCount}</span>
           </div>
           <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white px-4 py-2">
             <span className="text-xs font-semibold tracking-[0.12em] text-black/45 uppercase">턴</span>
@@ -1386,6 +1417,13 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                   <p className="mt-2 leading-6">{latestActivityItem.body}</p>
                 </div>
               ) : null}
+              <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-black/70">
+                <p className="text-xs font-semibold tracking-[0.12em] text-black/45 uppercase">실시간 상태</p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <span className="font-semibold text-black">{realtimeStatusLabel}</span>
+                  <span className="text-black/55">온라인 {onlineParticipantCount}명</span>
+                </div>
+              </div>
               <div className={`rounded-2xl border px-4 py-3 text-sm leading-6 ${messageToneClass}`}>
                 {message ?? (effectiveViewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : gameState ? canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다." : roomHint)}
               </div>
