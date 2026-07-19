@@ -139,6 +139,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const [isSwitchingRole, setIsSwitchingRole] = useState(false);
   const [headerActionFeedback, setHeaderActionFeedback] = useState<HeaderActionFeedback>(null);
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+  const [lastSeenMessageId, setLastSeenMessageId] = useState<string | null>(null);
   const [onlineGuestIds, setOnlineGuestIds] = useState<string[]>([]);
   const [selectedPieceId, setSelectedPieceId] = useState<PieceId | null>(null);
   const [rotation, setRotation] = useState(0);
@@ -156,6 +157,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const boardArticleRef = useRef<HTMLElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const shouldStickChatToBottomRef = useRef(true);
+  const lastSeenMessageIdRef = useRef<string | null>(null);
   const realtimeStatusRef = useRef<RealtimeStatus>("connecting");
   const reconnectTimerRef = useRef<number | null>(null);
   const headerActionFeedbackTimerRef = useRef<number | null>(null);
@@ -243,11 +245,27 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const canChat = effectiveViewerRole === "player" || effectiveViewerRole === "spectator";
   const showTrayPanel = Boolean(gameState);
   const resolvedSidebarPanel = !showTrayPanel && activeSidebarPanel === "tray" ? "status" : activeSidebarPanel;
-  const unreadMessageCount = isChatDrawerOpen ? 0 : Math.max(0, activityItems.length + messages.length);
   const onlineParticipantCount = onlineGuestIds.length;
 
   const seatLabel = normalizedSeat === "host" ? "HOST" : normalizedSeat === "guest" ? "GUEST" : effectiveViewerRole === "spectator" ? "SPECTATOR" : "미확인";
   const latestActivityItem = activityItems.at(-1) ?? null;
+  const unreadMessageCount = useMemo(() => {
+    if (isChatDrawerOpen || messages.length === 0) {
+      return 0;
+    }
+
+    if (!lastSeenMessageId) {
+      return messages.length;
+    }
+
+    const lastSeenIndex = messages.findIndex((message) => message.id === lastSeenMessageId);
+
+    if (lastSeenIndex < 0) {
+      return messages.length;
+    }
+
+    return Math.max(0, messages.length - lastSeenIndex - 1);
+  }, [isChatDrawerOpen, lastSeenMessageId, messages]);
 
   const roomHeadline = useMemo(() => {
     if (!roomSummary) {
@@ -556,9 +574,23 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     }
 
     const payload = (await response.json()) as { messages: RoomMessage[] };
-    setMessages(payload.messages ?? []);
+    const nextMessages = payload.messages ?? [];
+    setMessages(nextMessages);
+
+    if (nextMessages.length > 0 && lastSeenMessageIdRef.current === null) {
+      const latestMessageId = nextMessages.at(-1)?.id ?? null;
+      lastSeenMessageIdRef.current = latestMessageId;
+      setLastSeenMessageId(latestMessageId);
+    }
+
+    if (isChatDrawerOpen && nextMessages.length > 0) {
+      const latestMessageId = nextMessages.at(-1)?.id ?? null;
+      lastSeenMessageIdRef.current = latestMessageId;
+      setLastSeenMessageId(latestMessageId);
+    }
+
     return true;
-  }, [roomCode]);
+  }, [isChatDrawerOpen, roomCode]);
 
   const pushActivityItem = useCallback((body: string) => {
     setActivityItems((current) => {
@@ -1137,6 +1169,11 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
 
     if (messageRecord) {
       setMessages((current) => [...current, messageRecord]);
+
+      if (isChatDrawerOpen) {
+        lastSeenMessageIdRef.current = messageRecord.id;
+        setLastSeenMessageId(messageRecord.id);
+      }
     }
 
     await roomChannelRef.current?.send({
@@ -1155,6 +1192,14 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       event.preventDefault();
       await sendMessage();
     }
+  }
+
+  function openChatDrawer() {
+    setIsChatDrawerOpen(true);
+
+    const latestMessageId = messages.at(-1)?.id ?? null;
+    lastSeenMessageIdRef.current = latestMessageId;
+    setLastSeenMessageId(latestMessageId);
   }
 
   async function handleBoardCellClick(x: number, y: number) {
@@ -1439,7 +1484,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
               ) : null}
               <button
                 type="button"
-                onClick={() => setIsChatDrawerOpen(true)}
+                onClick={openChatDrawer}
                 className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm font-medium text-black/70 transition hover:border-[var(--accent)] hover:text-black"
               >
                 <span className="inline-flex items-center gap-2">
@@ -1447,8 +1492,12 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                   <span className="inline-flex items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--surface-strong)] px-2 py-0.5 text-xs text-black/60">
                     <PeopleIcon />
                     <span>{participantItems.length}</span>
-                    {unreadMessageCount > 0 ? <span>· {unreadMessageCount}</span> : null}
                   </span>
+                  {unreadMessageCount > 0 ? (
+                    <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-rose-600 px-2 py-0.5 text-xs font-bold text-white">
+                      {unreadMessageCount}
+                    </span>
+                  ) : null}
                 </span>
               </button>
             </div>
