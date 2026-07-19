@@ -287,12 +287,18 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       : "호스트가 다시 시작하면 곧 새 판이 열립니다.";
   }, [gameState?.currentTurnSeat, isPlayingRoom, isWaitingRoom, normalizedSeat, roomSummary]);
 
+  const winnerSeatLabel = gameState?.winnerSeat === "host" ? "HOST" : gameState?.winnerSeat === "guest" ? "GUEST" : null;
+
   const resultLabel = useMemo(() => {
     if (!isFinishedRoom) {
       return null;
     }
 
     if (!normalizedSeat) {
+      if (winnerSeatLabel) {
+        return `${winnerSeatLabel} 승리`;
+      }
+
       return effectiveViewerRole === "spectator" ? "관전 완료" : "게임 종료";
     }
 
@@ -305,7 +311,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     }
 
     return "패배";
-  }, [effectiveViewerRole, gameState?.winnerSeat, isFinishedRoom, normalizedSeat]);
+  }, [effectiveViewerRole, gameState?.winnerSeat, isFinishedRoom, normalizedSeat, winnerSeatLabel]);
 
   const finishedReasonLabel = useMemo(() => {
     switch (gameState?.finishedReason) {
@@ -346,6 +352,34 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     }
 
     return "호스트가 다시 시작하면 같은 방에서 다음 판이 자동으로 열립니다.";
+  }, [effectiveViewerRole, isFinishedRoom, normalizedSeat]);
+
+  const finishedSummaryLabel = useMemo(() => {
+    if (!isFinishedRoom) {
+      return null;
+    }
+
+    if (winnerSeatLabel) {
+      return `${winnerSeatLabel}가 이번 판을 가져갔습니다.`;
+    }
+
+    return "이번 판이 종료되었습니다.";
+  }, [isFinishedRoom, winnerSeatLabel]);
+
+  const rematchStatusLabel = useMemo(() => {
+    if (!isFinishedRoom) {
+      return null;
+    }
+
+    if (normalizedSeat === "host") {
+      return "같은 룸에서 다시 시작 버튼으로 다음 판을 바로 열 수 있습니다.";
+    }
+
+    if (effectiveViewerRole === "spectator") {
+      return "호스트가 다시 시작하면 같은 방에서 새 판을 이어서 지켜볼 수 있습니다.";
+    }
+
+    return "호스트가 다시 시작할 때까지 이 방에서 그대로 기다리면 됩니다.";
   }, [effectiveViewerRole, isFinishedRoom, normalizedSeat]);
 
   const messageToneClass = useMemo(() => {
@@ -1304,6 +1338,16 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                 </div>
               ) : null}
 
+              {isFinishedRoom ? (
+                <div className="mb-4 rounded-2xl border border-[var(--line)] bg-white px-4 py-4 text-sm text-black/70">
+                  <p className="text-xs font-semibold tracking-[0.12em] text-black/45 uppercase">판 종료</p>
+                  <p className="mt-2 text-lg font-semibold text-black">{finishedSummaryLabel}</p>
+                  {finishedReasonLabel ? <p className="mt-2">{finishedReasonLabel}</p> : null}
+                  {turnCountLabel ? <p className="mt-1 text-black/55">{turnCountLabel}</p> : null}
+                  {nextStepLabel ? <p className="mt-3 leading-6">{nextStepLabel}</p> : null}
+                </div>
+              ) : null}
+
               {selectedPiece ? (
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-black/70">
                   <div>
@@ -1425,8 +1469,14 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                 </div>
               </div>
               <div className={`rounded-2xl border px-4 py-3 text-sm leading-6 ${messageToneClass}`}>
-                {message ?? (effectiveViewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : gameState ? canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다." : roomHint)}
+              {message ?? (effectiveViewerRole === "spectator" ? "관전 중입니다. 현재 게임 상태를 확인하고 채팅에 참여할 수 있습니다." : gameState ? canPlayTurn ? "둘 블록을 선택하세요." : "상대의 수를 기다리는 중입니다." : roomHint)}
               </div>
+              {isFinishedRoom && rematchStatusLabel ? (
+                <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm leading-6 text-black/70">
+                  <p className="text-xs font-semibold tracking-[0.12em] text-black/45 uppercase">다음 단계</p>
+                  <p className="mt-2">{rematchStatusLabel}</p>
+                </div>
+              ) : null}
               {gameState ? (
                 <>
                   <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3">
