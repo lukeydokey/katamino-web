@@ -169,6 +169,29 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const canStart = normalizedSeat === "host" && roomSummary?.canStart;
   const gameState = roomSummary?.gameState ?? null;
   const selectedPiece = selectedPieceId && gameState ? gameState.pieces[selectedPieceId] : null;
+  const pieceList = useMemo(() => {
+    if (!gameState) {
+      return [];
+    }
+
+    return Object.values(gameState.pieces).sort((left, right) => {
+      const leftSelected = left.id === selectedPieceId;
+      const rightSelected = right.id === selectedPieceId;
+
+      if (leftSelected !== rightSelected) {
+        return leftSelected ? -1 : 1;
+      }
+
+      const leftUsed = gameState.usedPieceIds.includes(left.id);
+      const rightUsed = gameState.usedPieceIds.includes(right.id);
+
+      if (leftUsed !== rightUsed) {
+        return leftUsed ? 1 : -1;
+      }
+
+      return left.id.localeCompare(right.id);
+    });
+  }, [gameState, selectedPieceId]);
   const isWaitingRoom = roomSummary?.status === "waiting";
   const isPlayingRoom = roomSummary?.status === "playing";
   const isFinishedRoom = roomSummary?.status === "finished" || gameState?.phase === "finished";
@@ -1126,7 +1149,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 px-4 py-6 sm:gap-8 sm:px-6 sm:py-10">
+    <main className="mx-auto flex min-h-screen w-full max-w-[1400px] flex-col gap-6 px-4 py-6 sm:gap-8 sm:px-6 sm:py-10">
       <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm sm:p-6">
         <p className="text-sm font-semibold tracking-[0.2em] text-[var(--accent)] uppercase">
           Online Room
@@ -1198,7 +1221,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       </section>
 
       {roomSummary ? (
-        <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
           {gameState ? (
             <article
               ref={boardArticleRef}
@@ -1216,17 +1239,32 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRotation((current) => (current + 1) % 4);
-                    setPendingPlacementCell(null);
-                  }}
-                  disabled={effectiveViewerRole !== "player" || !canPlayTurn || !selectedPieceId}
-                  className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  선택 블록 회전
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRotation((current) => (current + 1) % 4);
+                      setPendingPlacementCell(null);
+                    }}
+                    disabled={effectiveViewerRole !== "player" || !canPlayTurn || !selectedPieceId}
+                    className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    선택 블록 회전
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPieceId(null);
+                      setRotation(0);
+                      setHoveredBoardCell(null);
+                      setPendingPlacementCell(null);
+                    }}
+                    disabled={!selectedPieceId}
+                    className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm font-medium text-black/70 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    선택 해제
+                  </button>
+                </div>
               </div>
 
               {latestActivityItem ? (
@@ -1235,7 +1273,20 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                 </div>
               ) : null}
 
-              <div className="grid aspect-square max-w-[640px] grid-cols-8 gap-1.5 rounded-2xl bg-[var(--surface-strong)] p-3 sm:gap-2 sm:p-4">
+              {selectedPiece ? (
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-black/70">
+                  <div>
+                    <p className="text-xs font-semibold tracking-[0.12em] text-black/45 uppercase">선택된 조각</p>
+                    <p className="mt-2 text-base font-semibold text-black">{selectedPiece.id.replace("block", "블록 ")}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-4 text-sm">
+                    <span>회전 {rotation * 90}°</span>
+                    <span>{canPlayTurn ? "보드에서 바로 배치할 수 있습니다." : "내 차례가 오면 배치할 수 있습니다."}</span>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="grid aspect-square max-w-[760px] grid-cols-8 gap-1.5 rounded-2xl bg-[var(--surface-strong)] p-3 sm:gap-2 sm:p-4 xl:max-w-[820px]">
                 {gameState.board.map((row, y) =>
                   row.map((cell, x) => {
                     const isFilled = cell !== null;
@@ -1423,7 +1474,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
               <section className={getSidebarSectionClass("tray")}>
                 <h3 className="text-lg font-semibold">블록 트레이</h3>
                 <div className="grid grid-cols-2 gap-2">
-                  {Object.values(gameState.pieces).map((piece) => {
+                  {pieceList.map((piece) => {
                     const isUsed = gameState.usedPieceIds.includes(piece.id);
                     const isSelected = selectedPieceId === piece.id;
 
