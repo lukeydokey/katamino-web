@@ -6,6 +6,8 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { LocalGameSession } from "@/domain/katamino/game-state";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { PieceId, PieceMask, PlayerSeat, RoomStatus } from "@/domain/katamino/types";
+import { useRoomBoardSelection } from "./use-room-board-selection";
+import { useRoomChatDrawerState } from "./use-room-chat-drawer-state";
 
 interface RoomPlayerRecord {
   guestId: string;
@@ -138,16 +140,9 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const [isResolvingEntry, setIsResolvingEntry] = useState(false);
   const [isSwitchingRole, setIsSwitchingRole] = useState(false);
   const [headerActionFeedback, setHeaderActionFeedback] = useState<HeaderActionFeedback>(null);
-  const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
-  const [lastSeenMessageId, setLastSeenMessageId] = useState<string | null>(null);
   const [onlineGuestIds, setOnlineGuestIds] = useState<string[]>([]);
-  const [selectedPieceId, setSelectedPieceId] = useState<PieceId | null>(null);
-  const [rotation, setRotation] = useState(0);
-  const [hoveredBoardCell, setHoveredBoardCell] = useState<{ x: number; y: number } | null>(null);
-  const [pendingPlacementCell, setPendingPlacementCell] = useState<{ x: number; y: number } | null>(null);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [activeSidebarPanel, setActiveSidebarPanel] = useState<SidebarPanel>("status");
-  const [showParticipants, setShowParticipants] = useState(false);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("connecting");
   const [reconnectNonce, setReconnectNonce] = useState(0);
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -155,12 +150,37 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   const roomSummaryRef = useRef<RoomSummary | null>(null);
   const roomChannelRef = useRef<RealtimeChannel | null>(null);
   const boardArticleRef = useRef<HTMLElement | null>(null);
-  const chatScrollRef = useRef<HTMLDivElement | null>(null);
-  const shouldStickChatToBottomRef = useRef(true);
-  const lastSeenMessageIdRef = useRef<string | null>(null);
   const realtimeStatusRef = useRef<RealtimeStatus>("connecting");
   const reconnectTimerRef = useRef<number | null>(null);
   const headerActionFeedbackTimerRef = useRef<number | null>(null);
+
+  const {
+    selectedPieceId,
+    rotation,
+    hoveredBoardCell,
+    pendingPlacementCell,
+    setHoveredBoardCell,
+    setPendingPlacementCell,
+    clearSelection,
+    rotateSelectionClockwise,
+    togglePieceSelection,
+  } = useRoomBoardSelection();
+
+  const {
+    isChatDrawerOpen,
+    showParticipants,
+    unreadMessageCount,
+    chatScrollRef,
+    handleChatScroll,
+    syncLatestMessage,
+    markMessageSeen,
+    stickChatToBottom,
+    openChatDrawer,
+    closeChatDrawer,
+    toggleParticipants,
+  } = useRoomChatDrawerState({
+    messageIds: messages.map((chat) => chat.id),
+  });
 
   const joinedPlayer = guestId ? roomSummary?.players.find((player) => player.guestId === guestId) : undefined;
   const joinedSpectator = guestId ? roomSummary?.spectators.find((spectator) => spectator.guestId === guestId) : undefined;
@@ -249,23 +269,6 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
 
   const seatLabel = normalizedSeat === "host" ? "HOST" : normalizedSeat === "guest" ? "GUEST" : effectiveViewerRole === "spectator" ? "SPECTATOR" : "미확인";
   const latestActivityItem = activityItems.at(-1) ?? null;
-  const unreadMessageCount = useMemo(() => {
-    if (isChatDrawerOpen || messages.length === 0) {
-      return 0;
-    }
-
-    if (!lastSeenMessageId) {
-      return messages.length;
-    }
-
-    const lastSeenIndex = messages.findIndex((message) => message.id === lastSeenMessageId);
-
-    if (lastSeenIndex < 0) {
-      return messages.length;
-    }
-
-    return Math.max(0, messages.length - lastSeenIndex - 1);
-  }, [isChatDrawerOpen, lastSeenMessageId, messages]);
 
   const roomHeadline = useMemo(() => {
     if (!roomSummary) {
@@ -587,20 +590,8 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     const nextMessages = payload.messages ?? [];
     setMessages(nextMessages);
 
-    if (nextMessages.length > 0 && lastSeenMessageIdRef.current === null) {
-      const latestMessageId = nextMessages.at(-1)?.id ?? null;
-      lastSeenMessageIdRef.current = latestMessageId;
-      setLastSeenMessageId(latestMessageId);
-    }
-
-    if (isChatDrawerOpen && nextMessages.length > 0) {
-      const latestMessageId = nextMessages.at(-1)?.id ?? null;
-      lastSeenMessageIdRef.current = latestMessageId;
-      setLastSeenMessageId(latestMessageId);
-    }
-
     return true;
-  }, [isChatDrawerOpen, roomCode]);
+  }, [roomCode]);
 
   const pushActivityItem = useCallback((body: string) => {
     setActivityItems((current) => {
@@ -706,14 +697,11 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
         payload.gameState?.phase !== "playing" ||
         turnNumberReset)
     ) {
-      setSelectedPieceId(null);
-      setRotation(0);
-      setHoveredBoardCell(null);
-      setPendingPlacementCell(null);
+      clearSelection();
     }
 
     return true;
-  }, [pushActivityItem, roomCode]);
+  }, [clearSelection, pushActivityItem, roomCode]);
 
   const refetchRoomAndMessages = useCallback(async () => {
     await Promise.all([fetchRoomSummary(), fetchMessages()]);
@@ -731,12 +719,8 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
   }, []);
 
   useEffect(() => {
-    if (!chatScrollRef.current || !shouldStickChatToBottomRef.current) {
-      return;
-    }
-
-    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-  }, [messages]);
+    syncLatestMessage();
+  }, [syncLatestMessage]);
 
   useEffect(() => {
     const articleElement = boardArticleRef.current;
@@ -751,8 +735,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       }
 
       event.preventDefault();
-      setRotation((current) => (current + 1) % 4);
-      setPendingPlacementCell(null);
+      rotateSelectionClockwise();
     };
 
     articleElement.addEventListener("wheel", handleWheel, { passive: false });
@@ -760,7 +743,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     return () => {
       articleElement.removeEventListener("wheel", handleWheel);
     };
-  }, [canPlayTurn, selectedPieceId]);
+  }, [canPlayTurn, rotateSelectionClockwise, selectedPieceId]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -768,10 +751,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
         return;
       }
 
-      setSelectedPieceId(null);
-      setRotation(0);
-      setHoveredBoardCell(null);
-      setPendingPlacementCell(null);
+      clearSelection();
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -779,7 +759,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [clearSelection]);
 
   useEffect(() => {
     let active = true;
@@ -985,10 +965,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       return;
     }
 
-    setSelectedPieceId(null);
-    setRotation(0);
-    setHoveredBoardCell(null);
-    setPendingPlacementCell(null);
+    clearSelection();
 
     setRoomSummary((current) =>
       current
@@ -1029,10 +1006,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       return;
     }
 
-    setSelectedPieceId(null);
-    setRotation(0);
-    setHoveredBoardCell(null);
-    setPendingPlacementCell(null);
+    clearSelection();
     setRoomSummary((current) =>
       current
         ? {
@@ -1122,10 +1096,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       return;
     }
 
-    setSelectedPieceId(null);
-    setRotation(0);
-    setHoveredBoardCell(null);
-    setPendingPlacementCell(null);
+    clearSelection();
     setRoomSummary((current) =>
       current
         ? {
@@ -1175,14 +1146,13 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
 
     setChatInput("");
     const messageRecord = payload.messageRecord;
-    shouldStickChatToBottomRef.current = true;
+    stickChatToBottom();
 
     if (messageRecord) {
       setMessages((current) => [...current, messageRecord]);
 
       if (isChatDrawerOpen) {
-        lastSeenMessageIdRef.current = messageRecord.id;
-        setLastSeenMessageId(messageRecord.id);
+        markMessageSeen(messageRecord.id);
       }
     }
 
@@ -1202,14 +1172,6 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
       event.preventDefault();
       await sendMessage();
     }
-  }
-
-  function openChatDrawer() {
-    setIsChatDrawerOpen(true);
-
-    const latestMessageId = messages.at(-1)?.id ?? null;
-    lastSeenMessageIdRef.current = latestMessageId;
-    setLastSeenMessageId(latestMessageId);
   }
 
   async function handleBoardCellClick(x: number, y: number) {
@@ -1363,8 +1325,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                   <button
                     type="button"
                     onClick={() => {
-                      setRotation((current) => (current + 1) % 4);
-                      setPendingPlacementCell(null);
+                      rotateSelectionClockwise();
                     }}
                     disabled={effectiveViewerRole !== "player" || !canPlayTurn || !selectedPieceId}
                     className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
@@ -1373,12 +1334,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedPieceId(null);
-                      setRotation(0);
-                      setHoveredBoardCell(null);
-                      setPendingPlacementCell(null);
-                    }}
+                    onClick={clearSelection}
                     disabled={!selectedPieceId}
                     className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm font-medium text-black/70 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -1632,12 +1588,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
                         key={piece.id}
                         type="button"
                         disabled={effectiveViewerRole !== "player" || isUsed || !canPlayTurn}
-                        onClick={() => {
-                          setSelectedPieceId((current) => (current === piece.id ? null : piece.id));
-                          setRotation(0);
-                          setHoveredBoardCell(null);
-                          setPendingPlacementCell(null);
-                        }}
+                        onClick={() => togglePieceSelection(piece.id)}
                         className={`rounded-2xl border px-3 py-3 text-left text-sm transition ${
                           isUsed
                             ? "cursor-not-allowed border-[var(--line)] bg-black/5 text-black/35"
@@ -1670,7 +1621,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
 
       <div
         className={`fixed inset-0 z-40 bg-black/20 transition ${isChatDrawerOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"}`}
-        onClick={() => setIsChatDrawerOpen(false)}
+        onClick={closeChatDrawer}
       />
 
       <aside
@@ -1688,7 +1639,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setShowParticipants((current) => !current)}
+              onClick={toggleParticipants}
               className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-xs font-semibold text-black/70"
             >
               <span className="inline-flex items-center gap-2">
@@ -1698,7 +1649,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
             </button>
             <button
               type="button"
-              onClick={() => setIsChatDrawerOpen(false)}
+              onClick={closeChatDrawer}
               className="rounded-full border border-[var(--line)] bg-white px-3 py-2 text-xs font-semibold text-black/70"
             >
               닫기
@@ -1723,8 +1674,7 @@ export function RoomPageClient({ roomCode, seat, viewerRole, guestId }: RoomPage
           ref={chatScrollRef}
           onScroll={(event) => {
             const element = event.currentTarget;
-            shouldStickChatToBottomRef.current =
-              element.scrollHeight - element.scrollTop - element.clientHeight < 40;
+            handleChatScroll(element.scrollTop, element.scrollHeight, element.clientHeight);
           }}
           className="mt-4 flex-1 space-y-2 overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-3 text-sm text-black/75"
         >

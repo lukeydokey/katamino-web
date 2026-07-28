@@ -1,7 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
 
+async function expectRoomEntryReady(page: Page) {
+  const createButton = page.getByRole("button", { name: "새 방 만들기" });
+
+  await expect(
+    createButton,
+    "온라인 룸 진입이 ready 상태가 되어야 room E2E를 계속할 수 있습니다.",
+  ).toBeEnabled({ timeout: 10000 });
+}
+
 async function createHostRoom(page: Page) {
   await page.goto("/");
+  await expectRoomEntryReady(page);
   await page.getByRole("button", { name: "새 방 만들기" }).click();
   await page.waitForURL(/\/room\//);
 
@@ -43,11 +53,17 @@ test("room 채팅이 새로고침 없이 양방향 동기화되고 reconnect 후
     await expect(guestPage.getByRole("button", { name: "기권하기" })).toBeVisible();
 
     await openChatDrawer(hostPage);
-    await openChatDrawer(guestPage);
+
+    const baselineMessage = `baseline-${Date.now()}`;
+    await hostPage.getByPlaceholder("메시지를 입력하세요").fill(baselineMessage);
+    await hostPage.getByRole("button", { name: "전송" }).click();
+    await guestPage.waitForTimeout(800);
 
     const firstMessage = `host-${Date.now()}`;
     await hostPage.getByPlaceholder("메시지를 입력하세요").fill(firstMessage);
     await hostPage.getByRole("button", { name: "전송" }).click();
+
+    await openChatDrawer(guestPage);
     await expect(guestPage.getByText(firstMessage)).toBeVisible();
 
     await guestContext.setOffline(true);
@@ -62,8 +78,8 @@ test("room 채팅이 새로고침 없이 양방향 동기화되고 reconnect 후
 
     await expect(guestPage.getByText(offlineMessage)).toBeVisible({ timeout: 10000 });
   } finally {
-    await hostContext.close();
-    await guestContext.close();
+    await hostContext.close().catch(() => undefined);
+    await guestContext.close().catch(() => undefined);
   }
 });
 
@@ -90,7 +106,7 @@ test("room 종료 후 같은 룸에서 다시 시작 흐름이 동작한다", as
     await expect(hostPage.getByRole("button", { name: "기권하기" })).toBeVisible({ timeout: 10000 });
     await expect(guestPage.getByRole("button", { name: "기권하기" })).toBeVisible({ timeout: 10000 });
   } finally {
-    await hostContext.close();
-    await guestContext.close();
+    await hostContext.close().catch(() => undefined);
+    await guestContext.close().catch(() => undefined);
   }
 });
