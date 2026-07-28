@@ -21,30 +21,39 @@ export function RoomEntry() {
     let mounted = true;
 
     async function bootstrap() {
-      const response = await fetch("/api/guest-session", {
-        method: "POST",
-      });
+      try {
+        const response = await fetch("/api/guest-session", {
+          method: "POST",
+        });
 
-      const payload = (await response.json()) as { message?: string; ok?: boolean };
+        const payload = (await response.json()) as { message?: string; ok?: boolean };
 
-      if (!mounted) {
-        return;
+        if (!mounted) {
+          return;
+        }
+
+        if (response.ok && payload.ok) {
+          setSessionStatus("ready");
+          setMessage("준비가 끝났습니다. 방을 만들거나 룸 코드로 참가해 보세요.");
+          return;
+        }
+
+        if (response.status === 503) {
+          setSessionStatus("disabled");
+          setMessage(payload.message ?? "현재는 온라인 룸 기능을 사용할 수 없습니다.");
+          return;
+        }
+
+        setSessionStatus("failed");
+        setMessage(payload.message ?? "준비 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+      } catch {
+        if (!mounted) {
+          return;
+        }
+
+        setSessionStatus("failed");
+        setMessage("준비 중 네트워크 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
       }
-
-      if (response.ok && payload.ok) {
-        setSessionStatus("ready");
-        setMessage("준비가 끝났습니다. 방을 만들거나 룸 코드로 참가해 보세요.");
-        return;
-      }
-
-      if (response.status === 503) {
-        setSessionStatus("disabled");
-        setMessage(payload.message ?? "현재는 온라인 룸 기능을 사용할 수 없습니다.");
-        return;
-      }
-
-      setSessionStatus("failed");
-      setMessage(payload.message ?? "준비 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
     }
 
     void bootstrap();
@@ -74,6 +83,8 @@ export function RoomEntry() {
       }
 
       router.push(`/room/${payload.roomCode}`);
+    } catch {
+      setMessage("방 생성 중 네트워크 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       setIsSubmitting(false);
     }
@@ -99,6 +110,8 @@ export function RoomEntry() {
       }
 
       router.push(`/room/${payload.roomCode}`);
+    } catch {
+      setMessage("방 참가 중 네트워크 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       setIsSubmitting(false);
     }

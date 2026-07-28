@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { ensureGuestSessionId } from "@/lib/guest-session";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { resolveRoomRequestContext } from "@/lib/rooms/request-context";
 import { generateRoomCode } from "@/lib/rooms/service";
 
 interface CreateRoomBody {
@@ -8,20 +7,13 @@ interface CreateRoomBody {
 }
 
 export async function POST(request: Request) {
-  const supabase = getSupabaseAdminClient();
+  const context = await resolveRoomRequestContext({ guestMode: "ensure" });
 
-  if (!supabase) {
-    return NextResponse.json(
-      { message: "Supabase server 환경이 아직 설정되지 않았습니다." },
-      { status: 503 },
-    );
+  if (!context.ok) {
+    return context.response;
   }
 
-  const guestId = await ensureGuestSessionId();
-
-  if (!guestId) {
-    return NextResponse.json({ message: "인증된 guest 세션이 필요합니다." }, { status: 401 });
-  }
+  const { guestId, supabase } = context;
 
   const body = (await request.json().catch(() => ({}))) as CreateRoomBody;
   const turnTimeSeconds =
@@ -45,6 +37,7 @@ export async function POST(request: Request) {
   });
 
   if (playerError) {
+    await supabase.from("rooms").delete().eq("id", room.id);
     return NextResponse.json({ message: "호스트 참가 처리에 실패했습니다." }, { status: 500 });
   }
 

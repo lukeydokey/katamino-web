@@ -9,7 +9,7 @@ on:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: 저장소 체크아웃
@@ -23,6 +23,20 @@ jobs:
 
       - name: 의존성 설치
         run: npm ci
+
+      - name: Supabase CLI 설정
+        uses: supabase/setup-cli@v3
+
+      - name: local Supabase 시작
+        run: supabase start
+
+      - name: local Supabase 환경 변수 export
+        run: |
+          SUPABASE_STATUS="$(supabase status -o env)"
+          echo "NEXT_PUBLIC_SUPABASE_URL=$(echo "$SUPABASE_STATUS" | sed -n 's/^API_URL="\(.*\)"$/\1/p')" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(echo "$SUPABASE_STATUS" | sed -n 's/^ANON_KEY="\(.*\)"$/\1/p')" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$(echo "$SUPABASE_STATUS" | sed -n 's/^SERVICE_ROLE_KEY="\(.*\)"$/\1/p')" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000" >> "$GITHUB_ENV"
 
       - name: Playwright 브라우저 설치
         run: npx playwright install --with-deps chromium

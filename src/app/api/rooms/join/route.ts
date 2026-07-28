@@ -1,24 +1,16 @@
 import { NextResponse } from "next/server";
-import { ensureGuestSessionId } from "@/lib/guest-session";
+import { resolveRoomRequestContext } from "@/lib/rooms/request-context";
 import { canEnterGuestSeat, getAvailableSeat, type RoomPlayerRecord } from "@/lib/rooms/service";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
-  const supabase = getSupabaseAdminClient();
+  const body = (await request.json().catch(() => ({}))) as { code?: string };
+  const context = await resolveRoomRequestContext({ guestMode: "ensure" });
 
-  if (!supabase) {
-    return NextResponse.json(
-      { message: "Supabase server 환경이 아직 설정되지 않았습니다." },
-      { status: 503 },
-    );
+  if (!context.ok) {
+    return context.response;
   }
 
-  const body = (await request.json()) as { code?: string };
-  const guestId = await ensureGuestSessionId();
-
-  if (!guestId) {
-    return NextResponse.json({ message: "인증된 guest 세션이 필요합니다." }, { status: 401 });
-  }
+  const { guestId, supabase } = context;
 
   if (!body.code) {
     return NextResponse.json({ message: "code가 필요합니다." }, { status: 400 });

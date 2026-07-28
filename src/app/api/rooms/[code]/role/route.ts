@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { ensureGuestSessionId } from "@/lib/guest-session";
-import { canEnterGuestSeat, type RoomPlayerRecord } from "@/lib/rooms/service";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { resolveRoomPlayerRequestContext } from "@/lib/rooms/request-context";
+import { canEnterGuestSeat } from "@/lib/rooms/service";
+import type { RoomStatus } from "@/domain/katamino/types";
 
 interface RoomRoleRouteContext {
   params: Promise<Record<string, string>>;
@@ -12,17 +12,6 @@ type TargetRole = "player" | "spectator";
 export async function POST(request: Request, context: RoomRoleRouteContext) {
   const params = await context.params;
   const code = params.code;
-  const supabase = getSupabaseAdminClient();
-
-  if (!supabase) {
-    return NextResponse.json({ message: "Supabase server 환경이 아직 설정되지 않았습니다." }, { status: 503 });
-  }
-
-  const guestId = await ensureGuestSessionId();
-
-  if (!guestId) {
-    return NextResponse.json({ message: "인증된 guest 세션이 필요합니다." }, { status: 401 });
-  }
 
   const body = (await request.json().catch(() => ({}))) as { targetRole?: TargetRole };
 
@@ -30,20 +19,25 @@ export async function POST(request: Request, context: RoomRoleRouteContext) {
     return NextResponse.json({ message: "targetRole이 필요합니다." }, { status: 400 });
   }
 
-  const { data: room } = await supabase.from("rooms").select("id, code, status").eq("code", code).single();
+  const roomContext = await resolveRoomPlayerRequestContext<{
+    id: string;
+    code: string;
+    status: string;
+  }>({
+    code,
+    guestMode: "ensure",
+    roomSelect: "id, code, status",
+  });
 
-  if (!room) {
-    return NextResponse.json({ message: "해당 코드를 가진 방이 없습니다." }, { status: 404 });
+  if (!roomContext.ok) {
+    return roomContext.response;
   }
+
+  const { guestId, players, requester: existingPlayer, room, supabase } = roomContext;
 
   if (room.status === "playing") {
     return NextResponse.json({ message: "게임 진행 중에는 역할을 바꿀 수 없습니다." }, { status: 409 });
   }
-
-  const { data: players } = await supabase.from("room_players").select("guest_id, seat").eq("room_id", room.id);
-  const normalizedPlayers: RoomPlayerRecord[] =
-    players?.map((player) => ({ guestId: player.guest_id, seat: player.seat })) ?? [];
-  const existingPlayer = normalizedPlayers.find((player) => player.guestId === guestId);
 
   if (body.targetRole === "spectator") {
     if (existingPlayer?.seat === "host") {
@@ -82,7 +76,7 @@ export async function POST(request: Request, context: RoomRoleRouteContext) {
     return NextResponse.json({ ok: true, roomCode: room.code, role: "player", seat: "guest" });
   }
 
-  if (!canEnterGuestSeat(room.status, normalizedPlayers)) {
+  if (!canEnterGuestSeat(room.status as RoomStatus, players)) {
     return NextResponse.json({ message: "현재 guest 좌석에 참가할 수 없습니다." }, { status: 409 });
   }
 
