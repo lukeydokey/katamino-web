@@ -86,7 +86,7 @@ export async function POST(request: Request, context: RoomMessagesRouteContext) 
     return NextResponse.json({ message: "인증된 guest 세션이 필요합니다." }, { status: 401 });
   }
 
-  const body = (await request.json()) as { body?: string };
+  const body = (await request.json().catch(() => ({}))) as { body?: string };
 
   if (!body.body?.trim()) {
     return NextResponse.json({ message: "메시지를 입력해 주세요." }, { status: 400 });

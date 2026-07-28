@@ -1,29 +1,21 @@
 import { NextResponse } from "next/server";
-import { getGuestSessionId } from "@/lib/guest-session";
+import { resolveRoomRequestContext } from "@/lib/rooms/request-context";
 import {
   canStartRoom,
   computeDeadlineAt,
   createInitialRoomSnapshot,
   type RoomPlayerRecord,
 } from "@/lib/rooms/service";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
-  const supabase = getSupabaseAdminClient();
+  const body = (await request.json().catch(() => ({}))) as { code?: string };
+  const context = await resolveRoomRequestContext({ guestMode: "get" });
 
-  if (!supabase) {
-    return NextResponse.json(
-      { message: "Supabase server 환경이 아직 설정되지 않았습니다." },
-      { status: 503 },
-    );
+  if (!context.ok) {
+    return context.response;
   }
 
-  const body = (await request.json()) as { code?: string };
-  const guestId = await getGuestSessionId();
-
-  if (!guestId) {
-    return NextResponse.json({ message: "인증된 guest 세션이 필요합니다." }, { status: 401 });
-  }
+  const { guestId, supabase } = context;
 
   if (!body.code) {
     return NextResponse.json({ message: "code가 필요합니다." }, { status: 400 });
@@ -83,6 +75,7 @@ export async function POST(request: Request) {
     .eq("id", room.id);
 
   if (roomError) {
+    await supabase.from("room_games").delete().eq("room_id", room.id);
     return NextResponse.json({ message: "방 상태 변경에 실패했습니다." }, { status: 500 });
   }
 

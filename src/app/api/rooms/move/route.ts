@@ -3,9 +3,8 @@ import { canPlacePiece, placePiece } from "@/domain/katamino/board";
 import { forfeitGame, type LocalGameSession } from "@/domain/katamino/game-state";
 import { rotateMaskClockwise } from "@/domain/katamino/pieces";
 import type { PieceMask, PlayerSeat } from "@/domain/katamino/types";
-import { getGuestSessionId } from "@/lib/guest-session";
+import { resolveRoomPlayerRequestContext } from "@/lib/rooms/request-context";
 import { computeDeadlineAt, isDeadlineExpired } from "@/lib/rooms/service";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 interface MoveBody {
   code?: string;
@@ -30,22 +29,7 @@ function getOppositeSeat(seat: PlayerSeat): PlayerSeat {
 }
 
 export async function POST(request: Request) {
-  const supabase = getSupabaseAdminClient();
-
-  if (!supabase) {
-    return NextResponse.json(
-      { message: "Supabase server 환경이 아직 설정되지 않았습니다." },
-      { status: 503 },
-    );
-  }
-
-  const guestId = await getGuestSessionId();
-
-  if (!guestId) {
-    return NextResponse.json({ message: "인증된 guest 세션이 필요합니다." }, { status: 401 });
-  }
-
-  const body = (await request.json()) as MoveBody;
+  const body = (await request.json().catch(() => ({}))) as MoveBody;
 
   if (
     !body.code ||
@@ -57,26 +41,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "필수 move 정보가 부족합니다." }, { status: 400 });
   }
 
-  const { data: room } = await supabase
-    .from("rooms")
-    .select("id, code, status, turn_time_seconds")
-    .eq("code", body.code)
-    .single();
+  const context = await resolveRoomPlayerRequestContext<{
+    id: string;
+    code: string;
+    status: string;
+    turn_time_seconds: number;
+  }>({
+    code: body.code,
+    guestMode: "get",
+    roomSelect: "id, code, status, turn_time_seconds",
+  });
 
-  if (!room) {
-    return NextResponse.json({ message: "해당 코드를 가진 방이 없습니다." }, { status: 404 });
+  if (!context.ok) {
+    return context.response;
   }
+
+  const { requester, room, supabase } = context;
 
   if (room.status !== "playing") {
     return NextResponse.json({ message: "아직 진행 중인 게임이 아닙니다." }, { status: 409 });
   }
-
-  const { data: players } = await supabase
-    .from("room_players")
-    .select("guest_id, seat")
-    .eq("room_id", room.id);
-
-  const requester = players?.find((player) => player.guest_id === guestId);
 
   if (!requester) {
     return NextResponse.json({ message: "방 참가자만 둘 수 있습니다." }, { status: 403 });

@@ -100,6 +100,8 @@ npm run test
 npm run test:e2e
 ```
 
+`Playwright`는 실행 시점에 `supabase status -o env`를 읽을 수 있으면 local Supabase 값을 `webServer` env로 주입합니다. 따라서 `.env.local`이 hosted Supabase를 가리키더라도, local stack이 실행 중이면 E2E는 local backend를 우선 사용합니다.
+
 ### 프로덕션 빌드 검증
 
 ```bash

@@ -4,8 +4,8 @@ import {
   resolveRoomRequestContext,
 } from "@/lib/rooms/request-context";
 
-export async function POST() {
-  const context = await resolveRoomRequestContext({ guestMode: "ensure" });
+export async function GET() {
+  const context = await resolveRoomRequestContext({ guestMode: "skip" });
 
   if (!context.ok) {
     return context.response;

@@ -1,4 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
+import { resolvePlaywrightWebServerEnv } from "./src/lib/testing/local-supabase-env";
+
+const webServerEnv = resolvePlaywrightWebServerEnv(process.env);
+const shouldReuseExistingServer =
+  !process.env.CI && webServerEnv.KATAMINO_E2E_LOCAL_SUPABASE !== "1";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -8,8 +13,9 @@ export default defineConfig({
   },
   webServer: {
     command: "npm run dev",
+    env: webServerEnv,
     url: "http://localhost:3000",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: shouldReuseExistingServer,
     timeout: 120_000,
   },
   projects: [
